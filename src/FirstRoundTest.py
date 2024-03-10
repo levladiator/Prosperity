@@ -1,7 +1,7 @@
 from typing import Dict, List
 from datamodel import OrderDepth, TradingState, Order
 import collections
-from collections import defaultdict
+from collections import defaultdict, deque
 import random
 import math
 import copy
@@ -17,6 +17,83 @@ def def_value():
 INF = int(1e9)
 
 
+class Forecast:
+    """
+    Forecasting the next price of a stock using ARMA model.
+    """
+    ar_coeffs = []
+    ma_coeffs = []
+    drift = 0
+
+    forecast_return = False
+    prev_forecast = 0
+    prev_price = 0
+    n_prices = 0
+
+    error_terms = deque()
+    returns = deque()
+    errors = []
+
+    def __init__(self, ar_coeffs, ma_coeffs, drift, forecast_return=False):
+        self.ar_coeffs = ar_coeffs
+        self.ma_coeffs = ma_coeffs
+        self.drift = drift
+        self.forecast_return = forecast_return
+
+        self.error_terms = deque([0] * len(ma_coeffs))
+        self.returns = deque([0] * len(ar_coeffs))
+
+    def ready(self):
+        """
+        Check if the model is ready to forecast.
+        :return: Boolean value indicating if the model is ready to forecast.
+        """
+        return (len(self.error_terms) == len(self.ma_coeffs)
+                and len(self.returns) == len(self.ar_coeffs))
+
+    def update(self, price):
+        # Actual simple return
+        if self.prev_price == 0:
+            self.prev_price = price
+
+        if self.forecast_return:
+            simple_ret = price - self.prev_price
+        else:
+            simple_ret = price
+
+        self.returns.appendleft(simple_ret)
+        if len(self.returns) > len(self.ar_coeffs):
+            self.returns.pop()
+
+        if self.prev_forecast == 0:
+            self.prev_forecast = simple_ret
+
+        error = simple_ret - self.prev_forecast
+
+        self.errors.append(error)
+        self.error_terms.appendleft(error)
+
+        if len(self.error_terms) > len(self.ma_coeffs):
+            self.error_terms.pop()
+
+        self.n_prices += 1
+
+    def forecast(self, price):
+        forecasted_change = (self.drift
+                             + np.dot(self.ar_coeffs, list(self.returns))
+                             + np.dot(self.ma_coeffs, list(self.error_terms)))
+        self.prev_forecast = forecasted_change
+        self.prev_price = price
+
+        if not self.forecast_return:
+            return int(round(forecasted_change))
+
+        return price + int(round(forecasted_change))
+
+    def get_errors(self):
+        return self.errors
+
+
 class Trader:
     position = copy.deepcopy(empty_dict)
     POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20}
@@ -26,9 +103,7 @@ class Trader:
     person_actvalof_position = defaultdict(def_value)
 
     cpnl = defaultdict(lambda: 0)
-    STARFRUIT_cache = []
     coconuts_cache = []
-    STARFRUIT_dim = 4
     coconuts_dim = 3
     steps = 0
     last_dolphins = -1
@@ -60,17 +135,29 @@ class Trader:
     std = 25
     basket_std = 117
 
-    def calc_next_price_STARFRUIT(self):
-        # STARFRUIT cache stores price from 1 day ago, current day resp
-        # by price, here we mean mid price
+    forecast_starfruit = Forecast(
+        ar_coeffs=[0.30360476, 0.35316679, -0.67114275, 0.20554640],
+        ma_coeffs=[-0.60509782, -0.31278503, 0.80433990, -0.42750443],
+        drift=0,
+        forecast_return=True
+    )
 
-        coef = [-0.01869561, 0.0455032, 0.16316049, 0.8090892]
-        intercept = 4.481696494462085
-        nxt_price = intercept
-        for i, val in enumerate(self.STARFRUIT_cache):
-            nxt_price += val * coef[i]
+    def extract_weighted_price(self, buy_dict, sell_dict):
+        tot_vol = 0
+        tot_price = 0
 
-        return int(round(nxt_price))
+        # ignore the last element
+
+        for ask, vol in sell_dict.items():
+            vol *= -1       # sell orders are negative
+            tot_vol += vol
+            tot_price += vol * ask
+
+        for bid, vol in buy_dict.items():
+            tot_vol += vol
+            tot_price += vol * bid
+
+        return tot_price / tot_vol
 
     def values_extract(self, order_dict, buy=0):
         tot_vol = 0
@@ -107,9 +194,6 @@ class Trader:
                 cpos += order_for
                 assert (order_for >= 0)
                 orders.append(Order(product, ask, order_for))
-
-        mprice_actual = (best_sell_pr + best_buy_pr) / 2
-        mprice_ours = (acc_bid + acc_ask) / 2
 
         undercut_buy = best_buy_pr + 1
         undercut_sell = best_sell_pr - 1
@@ -180,8 +264,8 @@ class Trader:
         undercut_buy = best_buy_pr + 1
         undercut_sell = best_sell_pr - 1
 
-        bid_pr = min(undercut_buy, acc_bid)  # we will shift this by 1 to beat this price
-        sell_pr = max(undercut_sell, acc_ask)
+        bid_pr = min(undercut_buy, acc_bid - 1)  # we will shift this by 1 to beat this price
+        sell_pr = max(undercut_sell, acc_ask + 1)
 
         if cpos < LIMIT:
             num = LIMIT - cpos
@@ -204,10 +288,11 @@ class Trader:
             cpos += num
 
         return orders
+
     def compute_orders(self, product, order_depth, acc_bid, acc_ask):
 
         if product == "AMETHYSTS":
-            return self.compute_orders_AMETHYSTS(product, order_depth, acc_bid, acc_ask)
+            return []
         if product == "STARFRUIT":
             return self.compute_orders_regression(product, order_depth, acc_bid, acc_ask, self.POSITION_LIMIT[product])
 
@@ -228,24 +313,23 @@ class Trader:
 
         timestamp = state.timestamp
 
-        if len(self.STARFRUIT_cache) == self.STARFRUIT_dim:
-            self.STARFRUIT_cache.pop(0)
+        # Update the forecasting data with the current mid price
+        weighted_price_STARFRUIT = self.extract_weighted_price(buy_dict=state.order_depths['STARFRUIT'].buy_orders,
+                                                               sell_dict=state.order_depths['STARFRUIT'].sell_orders)
 
-        _, bs_STARFRUIT = self.values_extract(
-            collections.OrderedDict(sorted(state.order_depths['STARFRUIT'].sell_orders.items())))
-        _, bb_STARFRUIT = self.values_extract(
-            collections.OrderedDict(sorted(state.order_depths['STARFRUIT'].buy_orders.items(), reverse=True)), 1)
-
-        self.STARFRUIT_cache.append((bs_STARFRUIT + bb_STARFRUIT) / 2)
+        self.forecast_starfruit.update(weighted_price_STARFRUIT)
 
         INF = 1e9
 
         STARFRUIT_lb = -INF
         STARFRUIT_ub = INF
 
-        if len(self.STARFRUIT_cache) == self.STARFRUIT_dim:
-            STARFRUIT_lb = self.calc_next_price_STARFRUIT() - 1
-            STARFRUIT_ub = self.calc_next_price_STARFRUIT() + 1
+        # Forecast the next value. This is needed for calibration
+        forecasted_val = self.forecast_starfruit.forecast(weighted_price_STARFRUIT)
+        if self.forecast_starfruit.ready():
+            STARFRUIT_lb = forecasted_val - 1
+            STARFRUIT_ub = forecasted_val + 1
+
 
         AMETHYSTS_lb = 10000
         AMETHYSTS_ub = 10000
