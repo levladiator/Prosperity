@@ -474,7 +474,7 @@ class Trader:
         result = {'PEARLS': [], 'BANANAS': [], 'COCONUTS': [], 'PINA_COLADAS': [], 'DIVING_GEAR': [], 'BERRIES': [],
                   'DIP': [], 'BAGUETTE': [], 'UKULELE': [], 'PICNIC_BASKET': []}
 
-        # Iterate over all the keys (the available products) contained in the order dephts
+        # Iterate over all the keys (the available products) contained in the order depths
         for key, val in state.position.items():
             self.position[key] = val
         print()
