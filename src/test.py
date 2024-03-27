@@ -1,5 +1,5 @@
-from src.datamodel import Listing, OrderDepth, Trade, TradingState
-from src.main import Trader
+from datamodel import Listing, OrderDepth, Trade, TradingState
+from main import Trader
 import unittest
 
 
@@ -7,38 +7,38 @@ class MyTestCase(unittest.TestCase):
     timestamp = 1000
 
     listings = {
-        "PRODUCT1": Listing(
-            symbol="PRODUCT1",
-            product="PRODUCT1",
+        "AMETHYSTS": Listing(
+            symbol="AMETHYSTS",
+            product="AMETHYSTS",
             denomination="SEASHELLS"
         ),
         "PRODUCT2": Listing(
-            symbol="PRODUCT2",
-            product="PRODUCT2",
+            symbol="STARFRUIT",
+            product="STARFRUIT",
             denomination="SEASHELLS"
         ),
     }
 
     order_depths = {
-        "PRODUCT1": OrderDepth(
+        "AMETHYSTS": OrderDepth(
             buy_orders={10: 7, 9: 5},
             sell_orders={11: -4, 12: -8}
         ),
-        "PRODUCT2": OrderDepth(
+        "STARFRUIT": OrderDepth(
             buy_orders={142: 3, 141: 5},
             sell_orders={144: -5, 145: -8}
         ),
     }
 
     own_trades = {
-        "PRODUCT1": [],
-        "PRODUCT2": []
+        "AMETHYSTS": [],
+        "STARFRUIT": []
     }
 
     market_trades = {
-        "PRODUCT1": [
+        "AMETHYSTS": [
             Trade(
-                symbol="PRODUCT1",
+                symbol="AMETHYSTS",
                 price=11,
                 quantity=4,
                 buyer="",
@@ -46,12 +46,12 @@ class MyTestCase(unittest.TestCase):
                 timestamp=900
             )
         ],
-        "PRODUCT2": []
+        "STARFRUIT": []
     }
 
     position = {
-        "PRODUCT1": 3,
-        "PRODUCT2": -5
+        "AMETHYSTS": 3,
+        "STARFRUIT": -5
     }
 
     observations = {}
