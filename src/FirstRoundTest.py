@@ -255,7 +255,7 @@ class Trader:
         cpos = self.position[product]
 
         for ask, vol in osell.items():
-            if ((ask <= acc_bid) or ((self.position[product] < 0) and (ask == acc_bid + 1))) and cpos < LIMIT:
+            if ((ask < acc_bid) or ((self.position[product] < 0) and (ask == acc_bid))) and cpos < LIMIT:
                 order_for = min(-vol, LIMIT - cpos)
                 cpos += order_for
                 assert (order_for >= 0)
@@ -264,8 +264,8 @@ class Trader:
         undercut_buy = best_buy_pr + 1
         undercut_sell = best_sell_pr - 1
 
-        bid_pr = min(undercut_buy, acc_bid - 1)  # we will shift this by 1 to beat this price
-        sell_pr = max(undercut_sell, acc_ask + 1)
+        bid_pr = min(undercut_buy, acc_bid + 1)  # we will shift this by 1 to beat this price
+        sell_pr = max(undercut_sell, acc_ask - 1)
 
         if cpos < LIMIT:
             num = LIMIT - cpos
@@ -275,7 +275,7 @@ class Trader:
         cpos = self.position[product]
 
         for bid, vol in obuy.items():
-            if ((bid >= acc_ask) or ((self.position[product] > 0) and (bid + 1 == acc_ask))) and cpos > -LIMIT:
+            if ((bid > acc_ask) or ((self.position[product] > 0) and (bid == acc_ask))) and cpos > -LIMIT:
                 order_for = max(-vol, -LIMIT - cpos)
                 # order_for is a negative number denoting how much we will sell
                 cpos += order_for
