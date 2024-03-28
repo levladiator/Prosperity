@@ -40,8 +40,8 @@ class Forecast:
         self.drift = drift
         self.forecast_return = forecast_return
 
-        self.error_terms = deque([0] * len(ma_coeffs))
-        self.returns = deque([0] * len(ar_coeffs))
+        self.error_terms = deque()
+        self.returns = deque()
 
     def ready(self):
         """
@@ -136,28 +136,40 @@ class Trader:
     basket_std = 117
 
     forecast_starfruit = Forecast(
-        ar_coeffs=[0.30360476, 0.35316679, -0.67114275, 0.20554640],
-        ma_coeffs=[-0.60509782, -0.31278503, 0.80433990, -0.42750443],
-        drift=0.1485,
-        forecast_return=True
+        ar_coeffs=[0.5916807634560216, 0.2327306356720495, 0.115885324988802, 0.05940967344182543],
+        ma_coeffs=[],
+        drift=1.4328896847300712,
+        forecast_return=False
     )
 
-    def extract_weighted_price(self, buy_dict, sell_dict):
-        tot_vol = 0
-        tot_price = 0
+    # forecast_starfruit = Forecast(
+    #     ar_coeffs=[0.68781342, 0.09042897, -0.70813763, 0.00545784],
+    #     ma_coeffs=[-1.31867826, 0.30470154, 0.84043486, -0.57522202],
+    #     drift=-0.18,
+    #     forecast_return=True
+    # )
 
-        # ignore the last element
+    def extract_weighted_price(self, buy_dict, sell_dict):
+        ask_vol = 0
+        bid_vol = 0
+
+        ask_weighted_val = 0
+        bid_weighted_val = 0
 
         for ask, vol in sell_dict.items():
-            vol *= -1       # sell orders are negative
-            tot_vol += vol
-            tot_price += vol * ask
+            vol *= -1
+            ask_vol += vol
+            ask_weighted_val += vol * ask
 
         for bid, vol in buy_dict.items():
-            tot_vol += vol
-            tot_price += vol * bid
+            bid_vol += vol
+            bid_weighted_val += vol * bid
 
-        return tot_price / tot_vol
+        ask_weighted_val /= ask_vol
+        bid_weighted_val /= bid_vol
+
+        # See more: https://quant.stackexchange.com/questions/50651/how-to-understand-micro-price-aka-weighted-mid-price
+        return (ask_weighted_val * bid_vol + bid_weighted_val * ask_vol) / (ask_vol + bid_vol)
 
     def values_extract(self, order_dict, buy=0):
         tot_vol = 0
@@ -255,7 +267,7 @@ class Trader:
         cpos = self.position[product]
 
         for ask, vol in osell.items():
-            if ((ask <= acc_bid) or ((self.position[product] < 0) and (ask == acc_bid))) and cpos < LIMIT:
+            if ((ask <= acc_bid) or ((self.position[product] < 0) and (ask == acc_bid + 1))) and cpos < LIMIT:
                 order_for = min(-vol, LIMIT - cpos)
                 cpos += order_for
                 assert (order_for >= 0)
@@ -264,8 +276,8 @@ class Trader:
         undercut_buy = best_buy_pr + 1
         undercut_sell = best_sell_pr - 1
 
-        bid_pr = min(undercut_buy, acc_bid + 1)  # we will shift this by 1 to beat this price
-        sell_pr = max(undercut_sell, acc_ask - 1)
+        bid_pr = min(undercut_buy, acc_bid)  # we will shift this by 1 to beat this price
+        sell_pr = max(undercut_sell, acc_ask)
 
         if cpos < LIMIT:
             num = LIMIT - cpos
@@ -275,7 +287,7 @@ class Trader:
         cpos = self.position[product]
 
         for bid, vol in obuy.items():
-            if ((bid >= acc_ask) or ((self.position[product] > 0) and (bid == acc_ask))) and cpos > -LIMIT:
+            if ((bid >= acc_ask) or ((self.position[product] > 0) and (bid + 1 == acc_ask))) and cpos > -LIMIT:
                 order_for = max(-vol, -LIMIT - cpos)
                 # order_for is a negative number denoting how much we will sell
                 cpos += order_for
@@ -317,6 +329,13 @@ class Trader:
         weighted_price_STARFRUIT = self.extract_weighted_price(buy_dict=state.order_depths['STARFRUIT'].buy_orders,
                                                                sell_dict=state.order_depths['STARFRUIT'].sell_orders)
 
+        bs_vol, bs_STARFRUIT = self.values_extract(
+            collections.OrderedDict(sorted(state.order_depths['STARFRUIT'].sell_orders.items())))
+        bb_vol, bb_STARFRUIT = self.values_extract(
+            collections.OrderedDict(sorted(state.order_depths['STARFRUIT'].buy_orders.items(), reverse=True)), 1)
+
+        mid_price = (bs_STARFRUIT + bb_STARFRUIT) / 2
+
         self.forecast_starfruit.update(weighted_price_STARFRUIT)
 
         INF = 1e9
@@ -329,7 +348,6 @@ class Trader:
         if self.forecast_starfruit.ready():
             STARFRUIT_lb = forecasted_val - 1
             STARFRUIT_ub = forecasted_val + 1
-
 
         AMETHYSTS_lb = 10000
         AMETHYSTS_ub = 10000
