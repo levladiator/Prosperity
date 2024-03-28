@@ -138,7 +138,7 @@ class Trader:
     forecast_starfruit = Forecast(
         ar_coeffs=[0.30360476, 0.35316679, -0.67114275, 0.20554640],
         ma_coeffs=[-0.60509782, -0.31278503, 0.80433990, -0.42750443],
-        drift=0,
+        drift=0.1485,
         forecast_return=True
     )
 
@@ -255,7 +255,7 @@ class Trader:
         cpos = self.position[product]
 
         for ask, vol in osell.items():
-            if ((ask < acc_bid) or ((self.position[product] < 0) and (ask == acc_bid))) and cpos < LIMIT:
+            if ((ask <= acc_bid) or ((self.position[product] < 0) and (ask == acc_bid))) and cpos < LIMIT:
                 order_for = min(-vol, LIMIT - cpos)
                 cpos += order_for
                 assert (order_for >= 0)
@@ -275,7 +275,7 @@ class Trader:
         cpos = self.position[product]
 
         for bid, vol in obuy.items():
-            if ((bid > acc_ask) or ((self.position[product] > 0) and (bid == acc_ask))) and cpos > -LIMIT:
+            if ((bid >= acc_ask) or ((self.position[product] > 0) and (bid == acc_ask))) and cpos > -LIMIT:
                 order_for = max(-vol, -LIMIT - cpos)
                 # order_for is a negative number denoting how much we will sell
                 cpos += order_for
