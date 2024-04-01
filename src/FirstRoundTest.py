@@ -138,7 +138,7 @@ class Trader:
     forecast_starfruit = Forecast(
         ar_coeffs=[0.5916807634560216, 0.2327306356720495, 0.115885324988802, 0.05940967344182543],
         ma_coeffs=[],
-        drift=1.4328896847300712,
+        drift=1.1328896847300712,
         forecast_return=False
     )
 
