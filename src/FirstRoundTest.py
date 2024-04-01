@@ -349,6 +349,13 @@ class Trader:
             STARFRUIT_lb = forecasted_val - 1
             STARFRUIT_ub = forecasted_val + 1
 
+            forecasted_change = weighted_price_STARFRUIT - weighted_price_STARFRUIT
+
+            if forecasted_change >= 2: # I expect the price to go up
+                STARFRUIT_lb = forecasted_val
+            elif forecasted_change <= -2: # I expect the price to go down
+                STARFRUIT_ub = forecasted_val
+
         AMETHYSTS_lb = 10000
         AMETHYSTS_ub = 10000
 
