@@ -6,6 +6,8 @@ from datamodel import OrderDepth, TradingState, Order
 class Trader:
     POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20}
 
+    starfruit_cache = []
+
     def compute_orders_amethyst(self, order_depths, position, acc_bid, acc_ask):
         product = "AMETHYSTS"
         orders = []
@@ -74,14 +76,87 @@ class Trader:
 
         return orders
 
+    def calc_next_price_starfruit(self, latest_price):
+        coef = [-0.01869561, 0.0455032, 0.16316049, 0.8090892]
+        intercept = 4.481696494462085
+        nxt_price = intercept
+
+        if len(self.starfruit_cache) == 4:
+            self.starfruit_cache.pop(0)
+
+        self.starfruit_cache.append(latest_price)
+
+        if len(self.starfruit_cache) < 4:
+            return -1e9, 1e9
+
+        for i, val in enumerate(self.starfruit_cache):
+            nxt_price += val * coef[i]
+
+        return int(round(nxt_price)) - 1, int(round(nxt_price)) + 1
+
+    def compute_orders_starfruit(self, order_depths, position, acc_bid=-1e9, acc_ask=1e9):
+        product = "STARFRUIT"
+        orders = []
+
+        buy_orders = order_depths.buy_orders
+        sell_orders = order_depths.sell_orders
+
+        pos_limit = self.POSITION_LIMIT[product]
+        curr_pos = position
+
+        best_bid = next(iter(buy_orders))
+        best_ask = next(iter(sell_orders))
+
+        acc_bid, acc_ask = self.calc_next_price_starfruit((best_bid + best_ask) / 2)
+
+        for ask, vol in sell_orders.items():
+            if curr_pos >= pos_limit:
+                break
+
+            if ask <= acc_bid or (ask == acc_bid + 1 and position < 0):
+                order_volume = min(-vol, pos_limit - curr_pos)
+                order_price = ask
+                curr_pos += order_volume
+                orders.append(Order(product, order_price, order_volume))
+
+        if curr_pos < pos_limit:
+            order_volume = pos_limit - curr_pos
+            order_price = min(best_bid + 1, acc_bid)
+            curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
+
+        curr_pos = position
+
+        for bid, vol in buy_orders.items():
+            if curr_pos <= -pos_limit:
+                break
+
+            if bid >= acc_ask or (bid == acc_ask - 1 and position > 0):
+                order_volume = max(-vol, -pos_limit - curr_pos)
+                order_price = bid
+                curr_pos += order_volume
+                orders.append(Order(product, order_price, order_volume))
+
+        if curr_pos > -pos_limit:
+            order_volume = -pos_limit - curr_pos
+            order_price = max(best_ask - 1, acc_ask)
+            curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
+
+        return orders
+
     def run(self, state: TradingState):
         final_orders = {"AMETHYSTS": [], "STARFRUIT": []}
 
-        final_orders["AMETHYSTS"] += (
-            self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
-                                         state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-                                         10000,
-                                         10000))
+        # final_orders["AMETHYSTS"] += (
+        #     self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
+        #                                  state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+        #                                  9999,
+        #                                  10001))
+
+        final_orders["STARFRUIT"] += (
+            self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
+                                          state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0))
 
         traderData = "SAMPLE"
         conversions = 1
