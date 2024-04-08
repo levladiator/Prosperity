@@ -1,10 +1,163 @@
+from datamodel import TradingState, Order
+from collections import deque
 import numpy as np
-from typing import List, Dict, Tuple
-from datamodel import OrderDepth, TradingState, Order
+
+INF = int(1e9)
+
+
+class Forecast:
+    """
+    Forecasting the next price of a stock using ARMA model.
+    """
+    prev_forecast = 0
+    prev_price = 0
+
+    error_terms = deque()
+    forecasts = deque()
+
+    def __init__(self, ar_coeffs, ma_coeffs, drift, forecast_return=False):
+        self.ar_coeffs = ar_coeffs
+        self.ma_coeffs = ma_coeffs
+        self.drift = drift
+        self.forecast_return = forecast_return
+
+    def ready(self):
+        """
+        Check if the model is ready to forecast.
+        :return: Boolean value indicating if the model is ready to forecast.
+        """
+        return (len(self.error_terms) == len(self.ma_coeffs)
+                and len(self.forecasts) == len(self.ar_coeffs))
+
+    def update(self, price):
+        if self.prev_price == 0:
+            self.prev_price = price
+
+        forecast = (price - self.prev_price) if self.forecast_return else price
+
+        self.forecasts.appendleft(forecast)
+        if len(self.forecasts) > len(self.ar_coeffs):
+            self.forecasts.pop()
+
+        # Forecast error
+        if self.prev_forecast == 0:
+            self.prev_forecast = forecast
+
+        error = forecast - self.prev_forecast
+
+        self.error_terms.appendleft(error)
+        if len(self.error_terms) > len(self.ma_coeffs):
+            self.error_terms.pop()
+
+    def forecast(self, price):
+        forecast = (self.drift
+                             + np.dot(self.ar_coeffs, list(self.forecasts))
+                             + np.dot(self.ma_coeffs, list(self.error_terms)))
+
+        self.prev_forecast = forecast
+        self.prev_price = price
+
+        if not self.forecast_return:
+            return int(round(forecast))
+
+        return int(round(price + forecast))
+
+
+class Utils:
+    @staticmethod
+    def extract_weighted_price(buy_dict, sell_dict):
+        ask_vol = 0
+        bid_vol = 0
+
+        ask_weighted_val = 0
+        bid_weighted_val = 0
+
+        for ask, vol in sell_dict.items():
+            vol *= -1
+            ask_vol += vol
+            ask_weighted_val += vol * ask
+
+        for bid, vol in buy_dict.items():
+            bid_vol += vol
+            bid_weighted_val += vol * bid
+
+        ask_weighted_val /= ask_vol
+        bid_weighted_val /= bid_vol
+
+        # See more: https://quant.stackexchange.com/questions/50651/how-to-understand-micro-price-aka-weighted-mid-price
+        return (ask_weighted_val * bid_vol + bid_weighted_val * ask_vol) / (ask_vol + bid_vol)
 
 
 class Trader:
     POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20}
+
+    # Stanford Cardinal model but used on micro-price (as opposed to mid-price)
+    forecast_starfruit = Forecast(
+        ar_coeffs=[0.8090892, 0.16316049, 0.0455032, -0.01869561],
+        ma_coeffs=[],
+        drift=4.481696494462085,
+        forecast_return=False
+    )
+
+    def get_pnl(self, state: TradingState):
+        price_change = 0
+
+        # Update profit
+        for _, trades in state.own_trades.items():
+            for trade in trades:
+                if trade.buyer == "SUBMISSION":
+                    price_change -= trade.price * trade.quantity
+                else:
+                    price_change += trade.price * trade.quantity
+
+        return price_change
+
+    def compute_orders_regression(self, order_depths, position, product, acc_bid, acc_ask):
+        orders = []
+        curr_pos = position
+        pos_limit = self.POSITION_LIMIT[product]
+
+        buy_orders = order_depths.buy_orders
+        sell_orders = order_depths.sell_orders
+
+        best_bid = next(iter(buy_orders))
+        best_ask = next(iter(sell_orders))
+
+        for ask, vol in sell_orders.items():
+            if curr_pos >= pos_limit:
+                break
+
+            if ask <= acc_bid or (ask == acc_bid + 1 and position < 0):
+                order_volume = min(-vol, pos_limit - curr_pos)
+                order_price = ask
+                curr_pos += order_volume
+                orders.append(Order(product, order_price, order_volume))
+
+        if curr_pos < pos_limit:
+            order_volume = pos_limit - curr_pos
+            order_price = min(best_bid + 1, acc_bid)
+            curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
+
+        curr_pos = position
+
+        for bid, vol in buy_orders.items():
+            if curr_pos <= -pos_limit:
+                break
+
+            if bid >= acc_ask or (bid == acc_ask - 1 and position > 0):
+                order_volume = max(-vol, -pos_limit - curr_pos)
+                order_price = bid
+                curr_pos += order_volume
+                orders.append(Order(product, order_price, order_volume))
+
+        if curr_pos > -pos_limit:
+            order_volume = -pos_limit - curr_pos
+            order_price = max(best_ask - 1, acc_ask)
+            curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
+
+        return orders
 
     def compute_orders_amethyst(self, order_depths, position, acc_bid, acc_ask):
         product = "AMETHYSTS"
@@ -74,7 +227,37 @@ class Trader:
 
         return orders
 
+    def compute_orders_starfruit(self, order_depths, position):
+        weighted_price = Utils.extract_weighted_price(buy_dict=order_depths.buy_orders,
+                                                      sell_dict=order_depths.sell_orders)
+
+        self.forecast_starfruit.update(weighted_price)
+        forecasted_pr = self.forecast_starfruit.forecast(weighted_price)
+
+        acc_bid = weighted_price - 1
+        acc_ask = weighted_price + 1
+
+        if self.forecast_starfruit.ready():
+            acc_bid = forecasted_pr - 1
+            acc_ask = forecasted_pr + 1
+
+            forecasted_change = forecasted_pr - weighted_price
+
+            if forecasted_change >= 2:  # I expect the price to go up
+                acc_bid = forecasted_pr
+            elif forecasted_change <= -2:  # I expect the price to go down
+                acc_ask = forecasted_pr
+
+        return self.compute_orders_regression(order_depths,
+                                              position,
+                                              "STARFRUIT",
+                                              acc_bid, acc_ask)
+
     def run(self, state: TradingState):
+        # Calculate profit until now
+        pnl = self.get_pnl(state)
+        print(f"PnL: {pnl}")
+
         final_orders = {"AMETHYSTS": [], "STARFRUIT": []}
 
         final_orders["AMETHYSTS"] += (
@@ -83,54 +266,10 @@ class Trader:
                                          10000,
                                          10000))
 
+        final_orders["STARFRUIT"] += (
+            self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
+                                          state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0))
+
         traderData = "SAMPLE"
         conversions = 1
         return final_orders, conversions, traderData
-
-    def exampleStrategy(self, state: TradingState):
-        print("traderData: " + state.traderData)
-        print("Observations: " + str(state.observations))
-
-        # Orders to be placed on exchange matching engine
-        result = {}
-        for product in state.order_depths:
-            order_depth: OrderDepth = state.order_depths[product]
-            # Initialize the list of Orders to be sent as an empty list
-            orders: List[Order] = []
-            # Define a fair value for the PRODUCT. Might be different for each tradable item
-            # Note that this value of 10 is just a dummy value, you should likely change it!
-            acceptable_price = 10
-            # All print statements output will be delivered inside test results
-            print("Acceptable price : " + str(acceptable_price))
-            print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(
-                len(order_depth.sell_orders)))
-
-            # Order depth list come already sorted.
-            # We can simply pick first item to check first item to get best bid or offer
-            if len(order_depth.sell_orders) != 0:
-                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-                if int(best_ask) < acceptable_price:
-                    # In case the lowest ask is lower than our fair value,
-                    # This presents an opportunity for us to buy cheaply
-                    # The code below therefore sends a BUY order at the price level of the ask,
-                    # with the same quantity
-                    # We expect this order to trade with the sell order
-                    print("BUY", str(-best_ask_amount) + "x", best_ask)
-                    orders.append(Order(product, best_ask, -best_ask_amount))
-
-            if len(order_depth.buy_orders) != 0:
-                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-                if int(best_bid) > acceptable_price:
-                    # Similar situation with sell orders
-                    print("SELL", str(best_bid_amount) + "x", best_bid)
-                    orders.append(Order(product, best_bid, -best_bid_amount))
-
-            result[product] = orders
-
-            # String value holding Trader state data required.
-        # It will be delivered as TradingState.traderData on next execution.
-        traderData = "SAMPLE"
-
-        # Sample conversion request. Check more details below.
-        conversions = 1
-        return result, conversions, traderData
