@@ -1,10 +1,8 @@
-import numpy as np
-from typing import List, Dict, Tuple
-from datamodel import OrderDepth, TradingState, Order
-from collections import defaultdict, deque, OrderedDict
+from datamodel import TradingState, Order
+from collections import deque
 import numpy as np
 
-INF = 1e9
+INF = int(1e9)
 
 
 class Forecast:
@@ -52,17 +50,17 @@ class Forecast:
             self.error_terms.pop()
 
     def forecast(self, price):
-        forecasted_change = (self.drift
+        forecast = (self.drift
                              + np.dot(self.ar_coeffs, list(self.forecasts))
                              + np.dot(self.ma_coeffs, list(self.error_terms)))
 
-        self.prev_forecast = forecasted_change
+        self.prev_forecast = forecast
         self.prev_price = price
 
         if not self.forecast_return:
-            return int(round(forecasted_change))
+            return int(round(forecast))
 
-        return price + int(round(forecasted_change))
+        return int(round(price + forecast))
 
 
 class Utils:
@@ -93,10 +91,11 @@ class Utils:
 class Trader:
     POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20}
 
+    # Stanford Cardinal model but used on micro-price (as opposed to mid-price)
     forecast_starfruit = Forecast(
-        ar_coeffs=[0.5916807634560216, 0.2327306356720495, 0.115885324988802, 0.05940967344182543],
+        ar_coeffs=[0.8090892, 0.16316049, 0.0455032, -0.01869561],
         ma_coeffs=[],
-        drift=1.1328896847300712,
+        drift=4.481696494462085,
         forecast_return=False
     )
 
@@ -222,18 +221,19 @@ class Trader:
         self.forecast_starfruit.update(weighted_price)
         forecasted_pr = self.forecast_starfruit.forecast(weighted_price)
 
-        if not self.forecast_starfruit.ready():
-            return []
+        acc_bid = weighted_price - 1
+        acc_ask = weighted_price + 1
 
-        acc_bid = forecasted_pr - 1
-        acc_ask = forecasted_pr + 1
+        if self.forecast_starfruit.ready():
+            acc_bid = forecasted_pr - 1
+            acc_ask = forecasted_pr + 1
 
-        forecasted_change = forecasted_pr - weighted_price
+            forecasted_change = forecasted_pr - weighted_price
 
-        if forecasted_change >= 2:  # I expect the price to go up
-            acc_bid = forecasted_pr
-        elif forecasted_change <= -2:  # I expect the price to go down
-            acc_ask = forecasted_pr
+            if forecasted_change >= 2:  # I expect the price to go up
+                acc_bid = forecasted_pr
+            elif forecasted_change <= -2:  # I expect the price to go down
+                acc_ask = forecasted_pr
 
         return self.compute_orders_regression(order_depths,
                                               position,
