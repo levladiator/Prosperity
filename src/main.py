@@ -174,7 +174,7 @@ class Trader:
             if curr_pos >= pos_limit:
                 break
 
-            if ask < acc_bid or (ask == acc_bid and position < 0):
+            if ask < acc_bid or (ask == acc_bid and position < -5):
                 order_volume = min(-vol, pos_limit - curr_pos)
                 order_price = ask
                 curr_pos += order_volume
@@ -188,10 +188,14 @@ class Trader:
 
             if position < 0:
                 order_price = min(best_bid + 2, acc_bid - 1)
+                # print("UNDERCUT BUY + 2: ", order_price)
             elif position > 15:
                 order_price = min(best_bid, acc_bid - 1)
+                # print("UNDERCUT BUY + 0: ", order_price)
             else:
                 order_price = min(best_bid + 1, acc_bid - 1)
+                # print("UNDERCUT BUY + 1: ", order_price)
+
 
             orders.append(Order(product, order_price, order_volume))
             curr_pos += order_volume
@@ -200,10 +204,10 @@ class Trader:
 
         # Compute sell orders based on order book
         for bid, vol in buy_orders.items():
-            if curr_pos > -pos_limit:
+            if curr_pos <= -pos_limit:
                 break
 
-            if bid > acc_ask or (bid == acc_ask and position > 0):
+            if bid > acc_ask or (bid == acc_ask and position > 5):
                 order_volume = max(-vol, -pos_limit - curr_pos)
                 order_price = bid
                 curr_pos += order_volume
@@ -217,10 +221,13 @@ class Trader:
 
             if position > 0:
                 order_price = max(best_ask - 2, acc_ask + 1)
-            elif position < 15:
+                print("UNDERCUT SELL -2: ", order_price)
+            elif position < -15:
                 order_price = max(best_ask, acc_ask + 1)
+                print("UNDERCUT SELL -0: ", order_price)
             else:
                 order_price = max(best_ask - 1, acc_ask + 1)
+                print("UNDERCUT SELL -1: ", order_price)
 
             orders.append(Order(product, order_price, order_volume))
             curr_pos += order_volume
@@ -269,6 +276,9 @@ class Trader:
         final_orders["STARFRUIT"] += (
             self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
                                           state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0))
+
+        # own_trades = state.own_trades
+        # print(own_trades)
 
         traderData = "SAMPLE"
         conversions = 1
