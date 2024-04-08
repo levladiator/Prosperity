@@ -260,11 +260,11 @@ class Trader:
 
         final_orders = {"AMETHYSTS": [], "STARFRUIT": []}
 
-        # final_orders["AMETHYSTS"] += (
-        #     self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
-        #                                  state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-        #                                  9999,
-        #                                  10001))
+        final_orders["AMETHYSTS"] += (
+            self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
+                                         state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+                                         10000,
+                                         10000))
 
         final_orders["STARFRUIT"] += (
             self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
