@@ -99,6 +99,19 @@ class Trader:
         forecast_return=False
     )
 
+    def get_pnl(self, state: TradingState):
+        price_change = 0
+
+        # Update profit
+        for _, trades in state.own_trades.items():
+            for trade in trades:
+                if trade.buyer == "SUBMISSION":
+                    price_change -= trade.price * trade.quantity
+                else:
+                    price_change += trade.price * trade.quantity
+
+        return price_change
+
     def compute_orders_regression(self, order_depths, position, product, acc_bid, acc_ask):
         orders = []
         curr_pos = position
@@ -241,6 +254,10 @@ class Trader:
                                               acc_bid, acc_ask)
 
     def run(self, state: TradingState):
+        # Calculate profit until now
+        pnl = self.get_pnl(state)
+        print(f"PnL: {pnl}")
+
         final_orders = {"AMETHYSTS": [], "STARFRUIT": []}
 
         # final_orders["AMETHYSTS"] += (
