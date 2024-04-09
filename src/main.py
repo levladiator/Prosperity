@@ -41,13 +41,15 @@ class Forecast:
 
         # Forecast error
         if self.prev_forecast == 0:
-            self.prev_forecast = forecast
-
-        error = forecast - self.prev_forecast
+            error = 0
+        else:
+            error = forecast - self.prev_forecast
 
         self.error_terms.appendleft(error)
         if len(self.error_terms) > len(self.ma_coeffs):
             self.error_terms.pop()
+
+        self.prev_price = price
 
     def forecast(self, price):
         forecast = (self.drift
@@ -55,7 +57,6 @@ class Forecast:
                              + np.dot(self.ma_coeffs, list(self.error_terms)))
 
         self.prev_forecast = forecast
-        self.prev_price = price
 
         if not self.forecast_return:
             return int(round(forecast))
@@ -91,11 +92,10 @@ class Utils:
 class Trader:
     POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20}
 
-    # Stanford Cardinal model but used on micro-price (as opposed to mid-price)
     forecast_starfruit = Forecast(
-        ar_coeffs=[-0.20290068103061853],
-        ma_coeffs=[-0.21180145634932968, -0.10223686257500406, -0.0019400867616120388],
-        drift=0.001668009275804253,
+        ar_coeffs=[0.040756093101644526],
+        ma_coeffs=[-0.4555341046014984],
+        drift=0.0016670624840474713,
         forecast_return=True
     )
 
@@ -240,12 +240,13 @@ class Trader:
                                                       sell_dict=order_depths.sell_orders)
 
         self.forecast_starfruit.update(weighted_price)
-        forecasted_pr = self.forecast_starfruit.forecast(weighted_price)
 
-        acc_bid = weighted_price - 1
-        acc_ask = weighted_price + 1
+        acc_bid = int(weighted_price) - 1
+        acc_ask = int(weighted_price) + 1
 
         if self.forecast_starfruit.ready():
+            forecasted_pr = self.forecast_starfruit.forecast(weighted_price)
+
             acc_bid = forecasted_pr - 1
             acc_ask = forecasted_pr + 1
 
