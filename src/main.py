@@ -41,13 +41,15 @@ class Forecast:
 
         # Forecast error
         if self.prev_forecast == 0:
-            self.prev_forecast = forecast
-
-        error = forecast - self.prev_forecast
+            error = 0
+        else:
+            error = forecast - self.prev_forecast
 
         self.error_terms.appendleft(error)
         if len(self.error_terms) > len(self.ma_coeffs):
             self.error_terms.pop()
+
+        self.prev_price = price
 
     def forecast(self, price):
         forecast = (self.drift
@@ -55,7 +57,6 @@ class Forecast:
                              + np.dot(self.ma_coeffs, list(self.error_terms)))
 
         self.prev_forecast = forecast
-        self.prev_price = price
 
         if not self.forecast_return:
             return int(round(forecast))
@@ -93,9 +94,10 @@ class Trader:
 
     # Stanford Cardinal model but used on micro-price (as opposed to mid-price)
     forecast_starfruit = Forecast(
-        ar_coeffs=[0.8090892, 0.16316049, 0.0455032, -0.01869561],
+        ar_coeffs=[0.5829995649961013, 0.22879986714195621, 0.1130056706312321, 0.0433244761665873,
+                   0.03167469673244338],
         ma_coeffs=[],
-        drift=4.481696494462085,
+        drift=0.9920684876224186,
         forecast_return=False
     )
 
@@ -239,12 +241,13 @@ class Trader:
                                                       sell_dict=order_depths.sell_orders)
 
         self.forecast_starfruit.update(weighted_price)
-        forecasted_pr = self.forecast_starfruit.forecast(weighted_price)
 
-        acc_bid = weighted_price - 1
-        acc_ask = weighted_price + 1
+        acc_bid = int(weighted_price) - 1
+        acc_ask = int(weighted_price) + 1
 
         if self.forecast_starfruit.ready():
+            forecasted_pr = self.forecast_starfruit.forecast(weighted_price)
+
             acc_bid = forecasted_pr - 1
             acc_ask = forecasted_pr + 1
 
@@ -267,11 +270,11 @@ class Trader:
 
         final_orders = {"AMETHYSTS": [], "STARFRUIT": []}
 
-        final_orders["AMETHYSTS"] += (
-            self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
-                                         state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-                                         10000,
-                                         10000))
+        # final_orders["AMETHYSTS"] += (
+        #     self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
+        #                                  state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+        #                                  10000,
+        #                                  10000))
 
         final_orders["STARFRUIT"] += (
             self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
