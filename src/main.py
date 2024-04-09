@@ -93,10 +93,10 @@ class Trader:
 
     # Stanford Cardinal model but used on micro-price (as opposed to mid-price)
     forecast_starfruit = Forecast(
-        ar_coeffs=[0.8090892, 0.16316049, 0.0455032, -0.01869561],
-        ma_coeffs=[],
-        drift=4.481696494462085,
-        forecast_return=False
+        ar_coeffs=[-0.20290068103061853],
+        ma_coeffs=[-0.21180145634932968, -0.10223686257500406, -0.0019400867616120388],
+        drift=0.001668009275804253,
+        forecast_return=True
     )
 
     def get_pnl(self, state: TradingState):
@@ -174,7 +174,7 @@ class Trader:
             if curr_pos >= pos_limit:
                 break
 
-            if ask < acc_bid or (ask == acc_bid and position < -5):
+            if ask < acc_bid or (ask == acc_bid and position < 0):
                 order_volume = min(-vol, pos_limit - curr_pos)
                 order_price = ask
                 curr_pos += order_volume
@@ -186,19 +186,19 @@ class Trader:
         if curr_pos < pos_limit:
             order_volume = min(2 * pos_limit, pos_limit - curr_pos)
 
-            if position < 0:
-                order_price = min(best_bid + 2, acc_bid - 1)
-                # print("UNDERCUT BUY + 2: ", order_price)
-            elif position > 15:
-                order_price = min(best_bid, acc_bid - 1)
-                # print("UNDERCUT BUY + 0: ", order_price)
-            else:
-                order_price = min(best_bid + 1, acc_bid - 1)
-                # print("UNDERCUT BUY + 1: ", order_price)
+            order_price = min(best_bid + 1, acc_bid - 1)
+            # if position < 0:
+            #     order_price = min(best_bid + 2, acc_bid - 1)
+            #     # print("UNDERCUT BUY + 2: ", order_price)
+            # elif position > 15:
+            #     order_price = min(best_bid, acc_bid - 1)
+            #     # print("UNDERCUT BUY + 0: ", order_price)
+            # else:
+            #     order_price = min(best_bid + 1, acc_bid - 1)
+            #     # print("UNDERCUT BUY + 1: ", order_price)
 
-
-            orders.append(Order(product, order_price, order_volume))
             curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
 
         curr_pos = position
 
@@ -207,7 +207,7 @@ class Trader:
             if curr_pos <= -pos_limit:
                 break
 
-            if bid > acc_ask or (bid == acc_ask and position > 5):
+            if bid > acc_ask or (bid == acc_ask and position > 0):
                 order_volume = max(-vol, -pos_limit - curr_pos)
                 order_price = bid
                 curr_pos += order_volume
@@ -219,18 +219,19 @@ class Trader:
         if curr_pos > -pos_limit:
             order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
 
-            if position > 0:
-                order_price = max(best_ask - 2, acc_ask + 1)
-                print("UNDERCUT SELL -2: ", order_price)
-            elif position < -15:
-                order_price = max(best_ask, acc_ask + 1)
-                print("UNDERCUT SELL -0: ", order_price)
-            else:
-                order_price = max(best_ask - 1, acc_ask + 1)
-                print("UNDERCUT SELL -1: ", order_price)
+            order_price = max(best_ask - 1, acc_ask + 1)
+            # if position > 0:
+            #     order_price = max(best_ask - 2, acc_ask + 1)
+            #     print("UNDERCUT SELL -2: ", order_price)
+            # elif position < -15:
+            #     order_price = max(best_ask, acc_ask + 1)
+            #     print("UNDERCUT SELL -0: ", order_price)
+            # else:
+            #     order_price = max(best_ask - 1, acc_ask + 1)
+            #     print("UNDERCUT SELL -1: ", order_price)
 
-            orders.append(Order(product, order_price, order_volume))
             curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
 
         return orders
 
