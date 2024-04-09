@@ -92,13 +92,11 @@ class Utils:
 class Trader:
     POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20}
 
-    # Stanford Cardinal model but used on micro-price (as opposed to mid-price)
     forecast_starfruit = Forecast(
-        ar_coeffs=[0.5829995649961013, 0.22879986714195621, 0.1130056706312321, 0.0433244761665873,
-                   0.03167469673244338],
-        ma_coeffs=[],
-        drift=0.9920684876224186,
-        forecast_return=False
+        ar_coeffs=[0.040756093101644526],
+        ma_coeffs=[-0.4555341046014984],
+        drift=0.0016670624840474713,
+        forecast_return=True
     )
 
     def get_pnl(self, state: TradingState):
@@ -270,11 +268,11 @@ class Trader:
 
         final_orders = {"AMETHYSTS": [], "STARFRUIT": []}
 
-        # final_orders["AMETHYSTS"] += (
-        #     self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
-        #                                  state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-        #                                  10000,
-        #                                  10000))
+        final_orders["AMETHYSTS"] += (
+            self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
+                                         state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+                                         10000,
+                                         10000))
 
         final_orders["STARFRUIT"] += (
             self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
