@@ -51,8 +51,8 @@ class Forecast:
 
     def forecast(self, price):
         forecast = (self.drift
-                             + np.dot(self.ar_coeffs, list(self.forecasts))
-                             + np.dot(self.ma_coeffs, list(self.error_terms)))
+                    + np.dot(self.ar_coeffs, list(self.forecasts))
+                    + np.dot(self.ma_coeffs, list(self.error_terms)))
 
         self.prev_forecast = forecast
         self.prev_price = price
@@ -97,7 +97,7 @@ class Trader:
         ma_coeffs=[-0.21180145634932968, -0.10223686257500406, -0.0019400867616120388],
         drift=0.001668009275804253,
         forecast_return=True
-        )
+    )
 
     def get_pnl(self, state: TradingState):
         price_change = 0
@@ -120,22 +120,31 @@ class Trader:
         buy_orders = order_depths.buy_orders
         sell_orders = order_depths.sell_orders
 
-        best_bid = next(iter(buy_orders))
-        best_ask = next(iter(sell_orders))
+        best_bid = next(reversed(buy_orders))
+        best_ask = next(reversed(sell_orders))
 
         for ask, vol in sell_orders.items():
             if curr_pos >= pos_limit:
                 break
 
-            if ask <= acc_bid or (ask == acc_bid + 1 and position < 0):
+            if ask <= acc_bid or (ask == acc_bid + 1 and position <= -10):
                 order_volume = min(-vol, pos_limit - curr_pos)
                 order_price = ask
                 curr_pos += order_volume
                 orders.append(Order(product, order_price, order_volume))
 
         if curr_pos < pos_limit:
-            order_volume = pos_limit - curr_pos
-            order_price = min(best_bid + 1, acc_bid)
+            order_volume = min(2 * pos_limit, pos_limit - curr_pos)
+
+            if position < -15:
+                order_price = min(best_bid + 3, acc_bid - 1)
+            elif position < 0:
+                order_price = min(best_bid + 2, acc_bid - 1)
+            elif position < 15:
+                order_price = min(best_bid + 1, acc_bid - 1)
+            else:
+                order_price = min(best_bid, acc_bid - 1)
+
             curr_pos += order_volume
             orders.append(Order(product, order_price, order_volume))
 
@@ -145,57 +154,63 @@ class Trader:
             if curr_pos <= -pos_limit:
                 break
 
-            if bid >= acc_ask or (bid == acc_ask - 1 and position > 0):
+            if bid >= acc_ask or (bid == acc_ask - 1 and position >= 10):
                 order_volume = max(-vol, -pos_limit - curr_pos)
                 order_price = bid
                 curr_pos += order_volume
                 orders.append(Order(product, order_price, order_volume))
 
         if curr_pos > -pos_limit:
-            order_volume = -pos_limit - curr_pos
-            order_price = max(best_ask - 1, acc_ask)
+            order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
+
+            if position > 15:
+                order_price = max(best_ask - 3, acc_ask + 1)
+            elif position > 0:
+                order_price = max(best_ask - 2, acc_ask + 1)
+            elif position > -15:
+                order_price = max(best_ask - 1, acc_ask + 1)
+            else:
+                order_price = max(best_ask, acc_ask + 1)
+
             curr_pos += order_volume
             orders.append(Order(product, order_price, order_volume))
 
         return orders
 
-    def compute_orders_amethyst(self, order_depths, position, acc_bid, acc_ask):
+    def compute_orders_amethysts(self, order_depths, position, acc_bid, acc_ask):
         product = "AMETHYSTS"
         orders = []
+
+        pos_limit = self.POSITION_LIMIT[product]
+        curr_pos = position
 
         buy_orders = order_depths.buy_orders
         sell_orders = order_depths.sell_orders
 
-        pos_limit = self.POSITION_LIMIT[product]
-        curr_pos = position
+        best_bid = next(reversed(buy_orders))
+        best_ask = next(reversed(sell_orders))
 
         # Compute buy orders based on order book
         for ask, vol in sell_orders.items():
             if curr_pos >= pos_limit:
                 break
 
-            if ask < acc_bid or (ask == acc_bid and position < 0):
+            if ask < acc_bid or (ask == acc_bid and position < -5):
                 order_volume = min(-vol, pos_limit - curr_pos)
                 order_price = ask
                 curr_pos += order_volume
                 orders.append(Order(product, order_price, order_volume))
 
         # Compute remaining buy orders based on position
-        best_bid = next(iter(buy_orders))
-
         if curr_pos < pos_limit:
             order_volume = min(2 * pos_limit, pos_limit - curr_pos)
 
-            order_price = min(best_bid + 1, acc_bid - 1)
-            # if position < 0:
-            #     order_price = min(best_bid + 2, acc_bid - 1)
-            #     # print("UNDERCUT BUY + 2: ", order_price)
-            # elif position > 15:
-            #     order_price = min(best_bid, acc_bid - 1)
-            #     # print("UNDERCUT BUY + 0: ", order_price)
-            # else:
-            #     order_price = min(best_bid + 1, acc_bid - 1)
-            #     # print("UNDERCUT BUY + 1: ", order_price)
+            if position < 0:
+                order_price = min(best_bid + 2, acc_bid - 1)
+            elif position < 15:
+                order_price = min(best_bid + 1, acc_bid - 1)
+            else:
+                order_price = min(best_bid, acc_bid - 1)
 
             curr_pos += order_volume
             orders.append(Order(product, order_price, order_volume))
@@ -207,28 +222,22 @@ class Trader:
             if curr_pos <= -pos_limit:
                 break
 
-            if bid > acc_ask or (bid == acc_ask and position > 0):
+            if bid > acc_ask or (bid == acc_ask and position > 5):
                 order_volume = max(-vol, -pos_limit - curr_pos)
                 order_price = bid
                 curr_pos += order_volume
                 orders.append(Order(product, order_price, order_volume))
 
         # Compute remaining sell orders based on product position
-        best_ask = next(iter(sell_orders))
-
         if curr_pos > -pos_limit:
             order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
 
-            order_price = max(best_ask - 1, acc_ask + 1)
-            # if position > 0:
-            #     order_price = max(best_ask - 2, acc_ask + 1)
-            #     print("UNDERCUT SELL -2: ", order_price)
-            # elif position < -15:
-            #     order_price = max(best_ask, acc_ask + 1)
-            #     print("UNDERCUT SELL -0: ", order_price)
-            # else:
-            #     order_price = max(best_ask - 1, acc_ask + 1)
-            #     print("UNDERCUT SELL -1: ", order_price)
+            if position > 0:
+                order_price = max(best_ask - 2, acc_ask + 1)
+            elif position > -15:
+                order_price = max(best_ask - 1, acc_ask + 1)
+            else:
+                order_price = max(best_ask, acc_ask + 1)
 
             curr_pos += order_volume
             orders.append(Order(product, order_price, order_volume))
@@ -269,10 +278,10 @@ class Trader:
         final_orders = {"AMETHYSTS": [], "STARFRUIT": []}
 
         final_orders["AMETHYSTS"] += (
-            self.compute_orders_amethyst(state.order_depths["AMETHYSTS"],
-                                         state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-                                         10000,
-                                         10000))
+            self.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
+                                          state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+                                          10000,
+                                          10000))
 
         final_orders["STARFRUIT"] += (
             self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
