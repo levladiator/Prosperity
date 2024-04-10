@@ -136,11 +136,11 @@ class Trader:
         if curr_pos < pos_limit:
             order_volume = min(2 * pos_limit, pos_limit - curr_pos)
 
-            if position < -15:
+            if curr_pos < -15:
                 order_price = min(best_bid + 3, acc_bid - 1)
-            elif position < 0:
+            elif curr_pos < 0:
                 order_price = min(best_bid + 2, acc_bid - 1)
-            elif position < 15:
+            elif curr_pos < 15:
                 order_price = min(best_bid + 1, acc_bid - 1)
             else:
                 order_price = min(best_bid, acc_bid - 1)
@@ -163,11 +163,11 @@ class Trader:
         if curr_pos > -pos_limit:
             order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
 
-            if position > 15:
+            if curr_pos > 15:
                 order_price = max(best_ask - 3, acc_ask + 1)
-            elif position > 0:
+            elif curr_pos > 0:
                 order_price = max(best_ask - 2, acc_ask + 1)
-            elif position > -15:
+            elif curr_pos > -15:
                 order_price = max(best_ask - 1, acc_ask + 1)
             else:
                 order_price = max(best_ask, acc_ask + 1)
@@ -205,9 +205,9 @@ class Trader:
         if curr_pos < pos_limit:
             order_volume = min(2 * pos_limit, pos_limit - curr_pos)
 
-            if position < 0:
+            if curr_pos < 0:
                 order_price = min(best_bid + 2, acc_bid - 1)
-            elif position < 15:
+            elif curr_pos < 15:
                 order_price = min(best_bid + 1, acc_bid - 1)
             else:
                 order_price = min(best_bid, acc_bid - 1)
@@ -232,9 +232,9 @@ class Trader:
         if curr_pos > -pos_limit:
             order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
 
-            if position > 0:
+            if curr_pos > 0:
                 order_price = max(best_ask - 2, acc_ask + 1)
-            elif position > -15:
+            elif curr_pos > -15:
                 order_price = max(best_ask - 1, acc_ask + 1)
             else:
                 order_price = max(best_ask, acc_ask + 1)
