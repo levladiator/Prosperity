@@ -1,9 +1,10 @@
-from datamodel import TradingState, Order
-from collections import deque
+import jsonpickle
 import numpy as np
 
-INF = int(1e9)
+from datamodel import TradingState, Order
+from collections import deque
 
+INF = int(1e9)
 
 class Forecast:
     """
@@ -62,7 +63,6 @@ class Forecast:
 
         return int(round(price + forecast))
 
-
 class Utils:
     @staticmethod
     def extract_weighted_price(buy_dict, sell_dict):
@@ -87,9 +87,8 @@ class Utils:
         # See more: https://quant.stackexchange.com/questions/50651/how-to-understand-micro-price-aka-weighted-mid-price
         return (ask_weighted_val * bid_vol + bid_weighted_val * ask_vol) / (ask_vol + bid_vol)
 
-
 class Trader:
-    POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20}
+    POSITION_LIMIT = {"AMETHYSTS:": 20, "STARFRUIT": 20, "ORCHIDS": 100}
 
     # Stanford Cardinal model but used on micro-price (as opposed to mid-price)
     forecast_starfruit = Forecast(
@@ -111,71 +110,6 @@ class Trader:
                     price_change += trade.price * trade.quantity
 
         return price_change
-
-    def compute_orders_regression(self, order_depths, position, product, acc_bid, acc_ask):
-        orders = []
-        curr_pos = position
-        pos_limit = self.POSITION_LIMIT[product]
-
-        buy_orders = order_depths.buy_orders
-        sell_orders = order_depths.sell_orders
-
-        best_bid = next(reversed(buy_orders))
-        best_ask = next(reversed(sell_orders))
-
-        for ask, vol in sell_orders.items():
-            if curr_pos >= pos_limit:
-                break
-
-            if ask <= acc_bid or (ask == acc_bid + 1 and position <= -10):
-                order_volume = min(-vol, pos_limit - curr_pos)
-                order_price = ask
-                curr_pos += order_volume
-                orders.append(Order(product, order_price, order_volume))
-
-        if curr_pos < pos_limit:
-            order_volume = min(2 * pos_limit, pos_limit - curr_pos)
-
-            if curr_pos < -15:
-                order_price = min(best_bid + 3, acc_bid - 1)
-            elif curr_pos < 0:
-                order_price = min(best_bid + 2, acc_bid - 1)
-            elif curr_pos < 15:
-                order_price = min(best_bid + 1, acc_bid - 1)
-            else:
-                order_price = min(best_bid, acc_bid - 1)
-
-            curr_pos += order_volume
-            orders.append(Order(product, order_price, order_volume))
-
-        curr_pos = position
-
-        for bid, vol in buy_orders.items():
-            if curr_pos <= -pos_limit:
-                break
-
-            if bid >= acc_ask or (bid == acc_ask - 1 and position >= 10):
-                order_volume = max(-vol, -pos_limit - curr_pos)
-                order_price = bid
-                curr_pos += order_volume
-                orders.append(Order(product, order_price, order_volume))
-
-        if curr_pos > -pos_limit:
-            order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
-
-            if curr_pos > 15:
-                order_price = max(best_ask - 3, acc_ask + 1)
-            elif curr_pos > 0:
-                order_price = max(best_ask - 2, acc_ask + 1)
-            elif curr_pos > -15:
-                order_price = max(best_ask - 1, acc_ask + 1)
-            else:
-                order_price = max(best_ask, acc_ask + 1)
-
-            curr_pos += order_volume
-            orders.append(Order(product, order_price, order_volume))
-
-        return orders
 
     def compute_orders_amethysts(self, order_depths, position, acc_bid, acc_ask):
         product = "AMETHYSTS"
@@ -244,6 +178,71 @@ class Trader:
 
         return orders
 
+    def compute_orders_regression(self, order_depths, position, product, acc_bid, acc_ask):
+        orders = []
+        curr_pos = position
+        pos_limit = self.POSITION_LIMIT[product]
+
+        buy_orders = order_depths.buy_orders
+        sell_orders = order_depths.sell_orders
+
+        best_bid = next(reversed(buy_orders))
+        best_ask = next(reversed(sell_orders))
+
+        for ask, vol in sell_orders.items():
+            if curr_pos >= pos_limit:
+                break
+
+            if ask <= acc_bid or (ask == acc_bid + 1 and position <= -10):
+                order_volume = min(-vol, pos_limit - curr_pos)
+                order_price = ask
+                curr_pos += order_volume
+                orders.append(Order(product, order_price, order_volume))
+
+        if curr_pos < pos_limit:
+            order_volume = min(2 * pos_limit, pos_limit - curr_pos)
+
+            if curr_pos < -15:
+                order_price = min(best_bid + 3, acc_bid - 1)
+            elif curr_pos < 0:
+                order_price = min(best_bid + 2, acc_bid - 1)
+            elif curr_pos < 15:
+                order_price = min(best_bid + 1, acc_bid - 1)
+            else:
+                order_price = min(best_bid, acc_bid - 1)
+
+            curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
+
+        curr_pos = position
+
+        for bid, vol in buy_orders.items():
+            if curr_pos <= -pos_limit:
+                break
+
+            if bid >= acc_ask or (bid == acc_ask - 1 and position >= 10):
+                order_volume = max(-vol, -pos_limit - curr_pos)
+                order_price = bid
+                curr_pos += order_volume
+                orders.append(Order(product, order_price, order_volume))
+
+        if curr_pos > -pos_limit:
+            order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
+
+            if curr_pos > 15:
+                order_price = max(best_ask - 3, acc_ask + 1)
+            elif curr_pos > 0:
+                order_price = max(best_ask - 2, acc_ask + 1)
+            elif curr_pos > -15:
+                order_price = max(best_ask - 1, acc_ask + 1)
+            else:
+                order_price = max(best_ask, acc_ask + 1)
+
+            curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
+
+        return orders
+
     def compute_orders_starfruit(self, order_depths, position):
         weighted_price = Utils.extract_weighted_price(buy_dict=order_depths.buy_orders,
                                                       sell_dict=order_depths.sell_orders)
@@ -270,25 +269,45 @@ class Trader:
                                               "STARFRUIT",
                                               acc_bid, acc_ask)
 
+    def compute_orders_orchids(self, order_depths, position, observations, acc_bid, acc_ask):
+        """
+        Production decreases with 4% every 10 minutes of sunlight exposure being less than 7h per day.
+        Production decreases with 2% for every 5% change in humidity compared to its optimal range, which is [60%, 80%].
+        Cost of storing orchids: 0.1 seashell per orchid per timestamp.
+        Export at bid price, only if position > 0, and pay transport fees + export tariffs.
+        Import at ask price, ??only if position < 0??, and have to pay transport fees + import tariffs.
+        """
+        product = "ORCHIDS"
+        orders = []
+
+        print(jsonpickle.encode(order_depths))
+        print(jsonpickle.encode(observations))
+
+        return orders
+
     def run(self, state: TradingState):
+        final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": []}
+
+        # final_orders["AMETHYSTS"] += (
+        #     self.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
+        #                                   state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+        #                                   10000,
+        #                                   10000))
+        #
+        # final_orders["STARFRUIT"] += (
+        #     self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
+        #                                   state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0))
+
+        final_orders["ORCHIDS"] += (
+            self.compute_orders_orchids(state.order_depths["ORCHIDS"],
+                                        state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
+                                        state.observations.conversionObservations,
+                                        -INF,
+                                        INF))
+
         # Calculate profit until now
-        pnl = self.get_pnl(state)
-        print(f"PnL: {pnl}")
-
-        final_orders = {"AMETHYSTS": [], "STARFRUIT": []}
-
-        final_orders["AMETHYSTS"] += (
-            self.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
-                                          state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-                                          10000,
-                                          10000))
-
-        final_orders["STARFRUIT"] += (
-            self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
-                                          state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0))
-
-        # own_trades = state.own_trades
-        # print(own_trades)
+        # pnl = self.get_pnl(state)
+        # print(f"PnL: {pnl}")
 
         traderData = "SAMPLE"
         conversions = 1
