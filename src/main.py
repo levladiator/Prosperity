@@ -366,6 +366,7 @@ class Trader:
 
     def run(self, state: TradingState):
         final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": []}
+        INF = 1e9
         trader_data = TraderData(state.traderData)
         if not trader_data.is_encoded("timestamp"):
             trader_data.add_object_encoding("timestamp", state.timestamp)
@@ -399,14 +400,14 @@ class Trader:
                                             forecast_starfruit,
                                             trader_data))
 
-        # final_orders["ORCHIDS"] += (
-        #     self.compute_orders_orchids(state.order_depths["ORCHIDS"],
-        #                                 state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
-        #                                 state.observations.conversionObservations,
-        #                                 -INF,
-        #                                 INF))
+        final_orders["ORCHIDS"] += (
+            self.compute_orders_orchids(state.order_depths["ORCHIDS"],
+                                        state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
+                                        state.observations.conversionObservations,
+                                        -INF,
+                                        INF))
 
-        # Calculate profit until now
+        #Calculate profit until now
         pnl = Trader.get_pnl(state)
         print(f"PnL: {pnl}")
 
