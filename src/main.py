@@ -4,17 +4,57 @@ import numpy as np
 from datamodel import TradingState, Order
 from collections import deque
 
-INF = int(1e9)
+
+class TraderData:
+    def __init__(self, trader_data: str):
+        self.trader_data = trader_data
+
+    @staticmethod
+    def replace_substring(text: str, i: int, j: int, replacement: str):
+        return text[:i] + replacement + text[j:]
+
+    def decode_json(self, variable_name):
+        variable_name_start = self.trader_data.find(variable_name)
+
+        if variable_name_start == -1:
+            print("Variable not found: " + variable_name)
+            return None
+        start_index = variable_name_start + len(variable_name) + 2
+
+        assert self.trader_data[start_index - 2:start_index] == ": ", variable_name + " was not properly encoded"
+
+        end_index = self.trader_data.find(")", start_index)
+        useful_information = self.trader_data[start_index:end_index].strip()
+
+        return jsonpickle.decode(useful_information)
+
+    def update_values(self, variable_name, new_value):
+        variable_name_start = self.trader_data.find(variable_name)
+        if variable_name_start == -1:
+            print("Could not update: " + variable_name + ", value not found")
+        assert variable_name_start >= 0, "Encoding needs to start with \'("
+
+        start_index = variable_name_start + len(variable_name) + 2
+        end_index = self.trader_data.find(")", start_index)
+        self.trader_data = TraderData.replace_substring(self.trader_data,
+                                                        start_index, end_index, jsonpickle.encode(new_value))
+
+    def add_object_encoding(self, variable_name, value):
+        self.trader_data = self.trader_data + ", (" + variable_name + ": " + jsonpickle.encode(value) + ")"
+
+    def is_encoded(self, variable_name):
+        if self.trader_data.find(variable_name) != -1:
+            return True
+        return False
+
+    def get_trader_data(self) -> str:
+        return self.trader_data
+
 
 class Forecast:
     """
     Forecasting the next price of a stock using ARMA model.
     """
-    prev_forecast = 0
-    prev_price = 0
-
-    error_terms = deque()
-    forecasts = deque()
 
     def __init__(self, ar_coeffs, ma_coeffs, drift, forecast_return=False):
         self.ar_coeffs = ar_coeffs
@@ -22,48 +62,89 @@ class Forecast:
         self.drift = drift
         self.forecast_return = forecast_return
 
-    def ready(self):
+    def ready(self, trader_data: TraderData):
         """
         Check if the model is ready to forecast.
         :return: Boolean value indicating if the model is ready to forecast.
         """
-        return (len(self.error_terms) == len(self.ma_coeffs)
-                and len(self.forecasts) == len(self.ar_coeffs))
+        forecasts, error_terms = Forecast.get_forecast_error_terms(trader_data)
+        return (len(error_terms) == len(self.ma_coeffs)
+                and len(forecasts) == len(self.ar_coeffs))
 
-    def update(self, price):
-        if self.prev_price == 0:
-            self.prev_price = price
+    @staticmethod
+    def get_forecast_error_terms(trader_data: TraderData):
+        forecasts = deque()
+        if trader_data.is_encoded("forecasts"):
+            forecasts = trader_data.decode_json("forecasts")
+        else:
+            trader_data.add_object_encoding("forecasts", forecasts)
 
-        forecast = (price - self.prev_price) if self.forecast_return else price
+        error_terms = deque()
+        if trader_data.is_encoded("error_terms"):
+            error_terms = trader_data.decode_json("error_terms")
+        else:
+            trader_data.add_object_encoding("error_terms", error_terms)
+        return forecasts, error_terms
 
-        self.forecasts.appendleft(forecast)
-        if len(self.forecasts) > len(self.ar_coeffs):
-            self.forecasts.pop()
+    @staticmethod
+    def get_prev_values(trader_data: TraderData):
+        prev_price = trader_data.decode_json("prev_price")
+        prev_forecast = trader_data.decode_json("prev_forecast")
+        return prev_price, prev_forecast
+
+    def update(self, price, trader_data: TraderData):
+
+        prev_price, prev_forecast = Forecast.get_prev_values(trader_data)
+        forecasts, error_terms = Forecast.get_forecast_error_terms(trader_data)
+
+        if prev_price is None:
+            prev_price = price
+            if not trader_data.is_encoded("prev_price"):
+                trader_data.add_object_encoding("prev_price", prev_price)
+            else:
+                trader_data.update_values("prev_price", price)
+
+        forecast = (price - prev_price) if self.forecast_return else price
+
+        forecasts.appendleft(forecast)
+        if len(forecasts) > len(self.ar_coeffs):
+            forecasts.pop()
+        trader_data.update_values("forecasts", forecasts)
 
         # Forecast error
-        if self.prev_forecast == 0:
-            self.prev_forecast = forecast
+        if prev_forecast is None:
+            prev_forecast = forecast
+            if not trader_data.is_encoded("prev_forecast"):
+                trader_data.add_object_encoding("prev_forecast", prev_forecast)
+            else:
+                trader_data.update_values("prev_forecast", forecast)
 
-        error = forecast - self.prev_forecast
+        error = forecast - prev_forecast
 
-        self.error_terms.appendleft(error)
-        if len(self.error_terms) > len(self.ma_coeffs):
-            self.error_terms.pop()
+        error_terms.appendleft(error)
+        if len(error_terms) > len(self.ma_coeffs):
+            error_terms.pop()
+        trader_data.update_values("error_terms", error_terms)
 
-    def forecast(self, price):
+    def forecast(self, price, trader_data: TraderData):
+        forecasts, error_terms = Forecast.get_forecast_error_terms(trader_data)
         forecast = (self.drift
-                    + np.dot(self.ar_coeffs, list(self.forecasts))
-                    + np.dot(self.ma_coeffs, list(self.error_terms)))
+                    + np.dot(self.ar_coeffs, list(forecasts))
+                    + np.dot(self.ma_coeffs, list(error_terms)))
 
-        self.prev_forecast = forecast
-        self.prev_price = price
+        prev_forecast = forecast
+        trader_data.update_values("prev_forecast", prev_forecast)
+        prev_price = price
+        trader_data.update_values("prev_price", prev_price)
 
         if not self.forecast_return:
             return int(round(forecast))
 
         return int(round(price + forecast))
 
+
 class Utils:
+
     @staticmethod
     def extract_weighted_price(buy_dict, sell_dict):
         ask_vol = 0
@@ -87,18 +168,11 @@ class Utils:
         # See more: https://quant.stackexchange.com/questions/50651/how-to-understand-micro-price-aka-weighted-mid-price
         return (ask_weighted_val * bid_vol + bid_weighted_val * ask_vol) / (ask_vol + bid_vol)
 
+
 class Trader:
-    POSITION_LIMIT = {"AMETHYSTS:": 20, "STARFRUIT": 20, "ORCHIDS": 100}
 
-    # Stanford Cardinal model but used on micro-price (as opposed to mid-price)
-    forecast_starfruit = Forecast(
-        ar_coeffs=[-0.20290068103061853],
-        ma_coeffs=[-0.21180145634932968, -0.10223686257500406, -0.0019400867616120388],
-        drift=0.001668009275804253,
-        forecast_return=True
-    )
-
-    def get_pnl(self, state: TradingState):
+    @staticmethod
+    def get_pnl(state: TradingState):
         price_change = 0
 
         # Update profit
@@ -111,11 +185,13 @@ class Trader:
 
         return price_change
 
-    def compute_orders_amethysts(self, order_depths, position, acc_bid, acc_ask):
+    @staticmethod
+    def compute_orders_amethysts(order_depths, position, acc_bid, acc_ask, trader_data: TraderData):
         product = "AMETHYSTS"
         orders = []
 
-        pos_limit = self.POSITION_LIMIT[product]
+        pos_limit = trader_data.decode_json("POSITION_LIMIT")[product]
+
         curr_pos = position
 
         buy_orders = order_depths.buy_orders
@@ -178,10 +254,11 @@ class Trader:
 
         return orders
 
-    def compute_orders_regression(self, order_depths, position, product, acc_bid, acc_ask):
+    @staticmethod
+    def compute_orders_regression(order_depths, position, product, acc_bid, acc_ask, trader_data: TraderData):
         orders = []
         curr_pos = position
-        pos_limit = self.POSITION_LIMIT[product]
+        pos_limit = trader_data.decode_json("POSITION_LIMIT")[product]
 
         buy_orders = order_depths.buy_orders
         sell_orders = order_depths.sell_orders
@@ -243,17 +320,17 @@ class Trader:
 
         return orders
 
-    def compute_orders_starfruit(self, order_depths, position):
+    @staticmethod
+    def compute_orders_starfruit(order_depths, position, forecast_starfruit, trader_data: TraderData):
         weighted_price = Utils.extract_weighted_price(buy_dict=order_depths.buy_orders,
                                                       sell_dict=order_depths.sell_orders)
 
-        self.forecast_starfruit.update(weighted_price)
-        forecasted_pr = self.forecast_starfruit.forecast(weighted_price)
-
+        forecast_starfruit.update(weighted_price, trader_data)
         acc_bid = weighted_price - 1
         acc_ask = weighted_price + 1
 
-        if self.forecast_starfruit.ready():
+        if forecast_starfruit.ready(trader_data):
+            forecasted_pr = forecast_starfruit.forecast(weighted_price, trader_data)
             acc_bid = forecasted_pr - 1
             acc_ask = forecasted_pr + 1
 
@@ -264,12 +341,14 @@ class Trader:
             elif forecasted_change <= -2:  # I expect the price to go down
                 acc_ask = forecasted_pr
 
-        return self.compute_orders_regression(order_depths,
-                                              position,
-                                              "STARFRUIT",
-                                              acc_bid, acc_ask)
+        return Trader.compute_orders_regression(order_depths,
+                                                position,
+                                                "STARFRUIT",
+                                                acc_bid, acc_ask,
+                                                trader_data)
 
-    def compute_orders_orchids(self, order_depths, position, observations, acc_bid, acc_ask):
+    @staticmethod
+    def compute_orders_orchids(order_depths, position, observations, acc_bid, acc_ask):
         """
         Production decreases with 4% every 10 minutes of sunlight exposure being less than 7h per day.
         Production decreases with 2% for every 5% change in humidity compared to its optimal range, which is [60%, 80%].
@@ -287,28 +366,49 @@ class Trader:
 
     def run(self, state: TradingState):
         final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": []}
+        trader_data = TraderData(state.traderData)
+        if not trader_data.is_encoded("timestamp"):
+            trader_data.add_object_encoding("timestamp", state.timestamp)
+        else:
+            trader_data.update_values("timestamp", state.timestamp)
 
-        # final_orders["AMETHYSTS"] += (
-        #     self.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
-        #                                   state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-        #                                   10000,
-        #                                   10000))
-        #
-        # final_orders["STARFRUIT"] += (
-        #     self.compute_orders_starfruit(state.order_depths["STARFRUIT"],
-        #                                   state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0))
+        if not trader_data.is_encoded("POSITION_LIMIT"):
+            POSITION_LIMIT = {"AMETHYSTS": 20, "STARFRUIT": 20, "ORCHIDS": 100}
+            trader_data.add_object_encoding("POSITION_LIMIT", POSITION_LIMIT)
+        if trader_data.is_encoded("forecast_starfruit"):
+            forecast_starfruit = trader_data.decode_json("forecast_starfruit")
+        else:
+            forecast_starfruit = Forecast(
+                ar_coeffs=[-0.20290068103061853],
+                ma_coeffs=[-0.21180145634932968, -0.10223686257500406, -0.0019400867616120388],
+                drift=0.001668009275804253,
+                forecast_return=True
+            )
+            trader_data.add_object_encoding("forecast_starfruit", forecast_starfruit)
 
-        final_orders["ORCHIDS"] += (
-            self.compute_orders_orchids(state.order_depths["ORCHIDS"],
-                                        state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
-                                        state.observations.conversionObservations,
-                                        -INF,
-                                        INF))
+        final_orders["AMETHYSTS"] += (
+            Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
+                                            state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+                                            10000,
+                                            10000,
+                                            trader_data))
+
+        final_orders["STARFRUIT"] += (
+            Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
+                                            state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
+                                            forecast_starfruit,
+                                            trader_data))
+
+        # final_orders["ORCHIDS"] += (
+        #     self.compute_orders_orchids(state.order_depths["ORCHIDS"],
+        #                                 state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
+        #                                 state.observations.conversionObservations,
+        #                                 -INF,
+        #                                 INF))
 
         # Calculate profit until now
-        # pnl = self.get_pnl(state)
-        # print(f"PnL: {pnl}")
+        pnl = Trader.get_pnl(state)
+        print(f"PnL: {pnl}")
 
-        traderData = "SAMPLE"
         conversions = 1
-        return final_orders, conversions, traderData
+        return final_orders, conversions, trader_data.get_trader_data()
