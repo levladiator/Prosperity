@@ -172,20 +172,6 @@ class Utils:
 class Trader:
 
     @staticmethod
-    def get_pnl(state: TradingState):
-        price_change = 0
-
-        # Update profit
-        for _, trades in state.own_trades.items():
-            for trade in trades:
-                if trade.buyer == "SUBMISSION":
-                    price_change -= trade.price * trade.quantity
-                else:
-                    price_change += trade.price * trade.quantity
-
-        return price_change
-
-    @staticmethod
     def compute_orders_amethysts(order_depths, position, acc_bid, acc_ask, trader_data: TraderData):
         product = "AMETHYSTS"
         orders = []
@@ -348,7 +334,7 @@ class Trader:
                                                 trader_data)
 
     @staticmethod
-    def compute_orders_orchids(order_depths, position, observations, acc_bid, acc_ask):
+    def compute_orders_orchids(order_depths, position, observations, acc_bid, acc_ask, trader_data: TraderData):
         """
         Production decreases with 4% every 10 minutes of sunlight exposure being less than 7h per day.
         Production decreases with 2% for every 5% change in humidity compared to its optimal range, which is [60%, 80%].
@@ -356,11 +342,74 @@ class Trader:
         Export at bid price, only if position > 0, and pay transport fees + export tariffs.
         Import at ask price, ??only if position < 0??, and have to pay transport fees + import tariffs.
         """
+        print(jsonpickle.encode(order_depths))
+        print(jsonpickle.encode(observations))
+
         product = "ORCHIDS"
         orders = []
 
-        print(jsonpickle.encode(order_depths))
-        print(jsonpickle.encode(observations))
+        curr_pos = position
+        pos_limit = trader_data.decode_json("POSITION_LIMIT")[product]
+
+        buy_orders = order_depths.buy_orders
+        sell_orders = order_depths.sell_orders
+
+        lowest_bid_pr = next(reversed(buy_orders))
+        highest_ask_pr = next(reversed(sell_orders))
+
+        conv_buy_pr = observations.askPrice + observations.transportFees + observations.importTariff
+
+        # for ask, vol in sell_orders.items():
+        #     if curr_pos >= pos_limit:
+        #         break
+        #
+        #     if ask <= acc_bid or (ask == acc_bid + 1 and position <= -10):
+        #         order_volume = min(-vol, pos_limit - curr_pos)
+        #         order_price = ask
+        #         curr_pos += order_volume
+        #         orders.append(Order(product, order_price, order_volume))
+        #
+        # if curr_pos < pos_limit:
+        #     order_volume = min(2 * pos_limit, pos_limit - curr_pos)
+        #
+        #     if curr_pos < -15:
+        #         order_price = min(best_bid + 3, acc_bid - 1)
+        #     elif curr_pos < 0:
+        #         order_price = min(best_bid + 2, acc_bid - 1)
+        #     elif curr_pos < 15:
+        #         order_price = min(best_bid + 1, acc_bid - 1)
+        #     else:
+        #         order_price = min(best_bid, acc_bid - 1)
+        #
+        #     curr_pos += order_volume
+        #     orders.append(Order(product, order_price, order_volume))
+        #
+        # curr_pos = position
+        #
+        # for bid, vol in buy_orders.items():
+        #     if curr_pos <= -pos_limit:
+        #         break
+        #
+        #     if bid >= acc_ask or (bid == acc_ask - 1 and position >= 10):
+        #         order_volume = max(-vol, -pos_limit - curr_pos)
+        #         order_price = bid
+        #         curr_pos += order_volume
+        #         orders.append(Order(product, order_price, order_volume))
+        #
+        # if curr_pos > -pos_limit:
+        #     order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
+        #
+        #     if curr_pos > 15:
+        #         order_price = max(best_ask - 3, acc_ask + 1)
+        #     elif curr_pos > 0:
+        #         order_price = max(best_ask - 2, acc_ask + 1)
+        #     elif curr_pos > -15:
+        #         order_price = max(best_ask - 1, acc_ask + 1)
+        #     else:
+        #         order_price = max(best_ask, acc_ask + 1)
+        #
+        #     curr_pos += order_volume
+        #     orders.append(Order(product, order_price, order_volume))
 
         return orders
 
@@ -387,29 +436,26 @@ class Trader:
             )
             trader_data.add_object_encoding("forecast_starfruit", forecast_starfruit)
 
-        final_orders["AMETHYSTS"] += (
-            Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
-                                            state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-                                            10000,
-                                            10000,
-                                            trader_data))
-
-        final_orders["STARFRUIT"] += (
-            Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
-                                            state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
-                                            forecast_starfruit,
-                                            trader_data))
+        # final_orders["AMETHYSTS"] += (
+        #     Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
+        #                                     state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+        #                                     10000,
+        #                                     10000,
+        #                                     trader_data))
+        #
+        # final_orders["STARFRUIT"] += (
+        #     Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
+        #                                     state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
+        #                                     forecast_starfruit,
+        #                                     trader_data))
 
         final_orders["ORCHIDS"] += (
             self.compute_orders_orchids(state.order_depths["ORCHIDS"],
                                         state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
-                                        state.observations.conversionObservations,
+                                        state.observations.conversionObservations["ORCHIDS"],
                                         -INF,
-                                        INF))
-
-        #Calculate profit until now
-        pnl = Trader.get_pnl(state)
-        print(f"PnL: {pnl}")
+                                        INF,
+                                        trader_data))
 
         conversions = 1
         return final_orders, conversions, trader_data.get_trader_data()
