@@ -345,8 +345,7 @@ class Trader:
         print(jsonpickle.encode(order_depths))
         print(jsonpickle.encode(observations))
         print("Position:", position)
-        if position == -100:
-            print("NUIE")
+
         product = "ORCHIDS"
         orders = []
         conversions = 0
@@ -357,68 +356,39 @@ class Trader:
         buy_orders = order_depths.buy_orders
         sell_orders = order_depths.sell_orders
 
-        lowest_bid_pr = next(reversed(buy_orders))
-        highest_ask_pr = next(reversed(sell_orders))
+        highest_bid_pr = next(iter(buy_orders))
+        highest_bid_vol = buy_orders[highest_bid_pr]
 
         conv_buy_pr = observations.askPrice + observations.transportFees + observations.importTariff
-        for bid, vol in buy_orders.items():
-            if curr_pos <= -pos_limit:
-                break
 
-            if bid > conv_buy_pr:
-                order_volume = max(-vol, -pos_limit - curr_pos)
-                order_price = bid
+        if not trader_data.is_encoded("reached_short"):
+            if position <= -50:
+                trader_data.add_object_encoding("reached_short", True)
+            else:
+                order_volume = max(-highest_bid_vol, -pos_limit - curr_pos)
+                order_price = highest_bid_pr
                 curr_pos += order_volume
                 orders.append(Order(product, order_price, order_volume))
-                conversions -= order_volume
-        conversions = min(-position,conversions)
+        else:
+            for bid, vol in buy_orders.items():
+                if curr_pos <= -pos_limit:
+                    break
+
+                if bid > conv_buy_pr:
+                    order_volume = max(-vol, -pos_limit - curr_pos)
+                    order_price = bid
+                    curr_pos += order_volume
+                    orders.append(Order(product, order_price, order_volume))
+                    conversions -= order_volume
+
+        conversions = min(-position, conversions)
+
         if trader_data.is_encoded("conversions"):
             trader_data.update_values("conversions", conversions)
         else:
             trader_data.add_object_encoding("conversions", conversions)
-        print(conversions)
-        # for ask, vol in sell_orders.items():
-        #     if curr_pos >= pos_limit:
-        #         break
-        #
-        #     if ask <= acc_bid or (ask == acc_bid + 1 and position <= -10):
-        #         order_volume = min(-vol, pos_limit - curr_pos)
-        #         order_price = ask
-        #         curr_pos += order_volume
-        #         orders.append(Order(product, order_price, order_volume))
-        #
-        # if curr_pos < pos_limit:
-        #     order_volume = min(2 * pos_limit, pos_limit - curr_pos)
-        #
-        #     if curr_pos < -15:
-        #         order_price = min(best_bid + 3, acc_bid - 1)
-        #     elif curr_pos < 0:
-        #         order_price = min(best_bid + 2, acc_bid - 1)
-        #     elif curr_pos < 15:
-        #         order_price = min(best_bid + 1, acc_bid - 1)
-        #     else:
-        #         order_price = min(best_bid, acc_bid - 1)
-        #
-        #     curr_pos += order_volume
-        #     orders.append(Order(product, order_price, order_volume))
-        #
-        # curr_pos = position
-        #
 
-        # if curr_pos > -pos_limit:
-        #     order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
-        #
-        #     if curr_pos > 15:
-        #         order_price = max(best_ask - 3, acc_ask + 1)
-        #     elif curr_pos > 0:
-        #         order_price = max(best_ask - 2, acc_ask + 1)
-        #     elif curr_pos > -15:
-        #         order_price = max(best_ask - 1, acc_ask + 1)
-        #     else:
-        #         order_price = max(best_ask, acc_ask + 1)
-        #
-        #     curr_pos += order_volume
-        #     orders.append(Order(product, order_price, order_volume))
+        print(conversions)
 
         return orders
 
