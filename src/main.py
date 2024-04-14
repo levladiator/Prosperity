@@ -344,9 +344,12 @@ class Trader:
         """
         print(jsonpickle.encode(order_depths))
         print(jsonpickle.encode(observations))
-
+        print("Position:", position)
+        if position == -100:
+            print("NUIE")
         product = "ORCHIDS"
         orders = []
+        conversions = 0
 
         curr_pos = position
         pos_limit = trader_data.decode_json("POSITION_LIMIT")[product]
@@ -358,7 +361,22 @@ class Trader:
         highest_ask_pr = next(reversed(sell_orders))
 
         conv_buy_pr = observations.askPrice + observations.transportFees + observations.importTariff
+        for bid, vol in buy_orders.items():
+            if curr_pos <= -pos_limit:
+                break
 
+            if bid > conv_buy_pr:
+                order_volume = max(-vol, -pos_limit - curr_pos)
+                order_price = bid
+                curr_pos += order_volume
+                orders.append(Order(product, order_price, order_volume))
+                conversions -= order_volume
+        conversions = min(-position,conversions)
+        if trader_data.is_encoded("conversions"):
+            trader_data.update_values("conversions", conversions)
+        else:
+            trader_data.add_object_encoding("conversions", conversions)
+        print(conversions)
         # for ask, vol in sell_orders.items():
         #     if curr_pos >= pos_limit:
         #         break
@@ -386,16 +404,7 @@ class Trader:
         #
         # curr_pos = position
         #
-        # for bid, vol in buy_orders.items():
-        #     if curr_pos <= -pos_limit:
-        #         break
-        #
-        #     if bid >= acc_ask or (bid == acc_ask - 1 and position >= 10):
-        #         order_volume = max(-vol, -pos_limit - curr_pos)
-        #         order_price = bid
-        #         curr_pos += order_volume
-        #         orders.append(Order(product, order_price, order_volume))
-        #
+
         # if curr_pos > -pos_limit:
         #     order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
         #
@@ -456,6 +465,8 @@ class Trader:
                                         -INF,
                                         INF,
                                         trader_data))
+        conversions = None
+        if trader_data.is_encoded("conversions"):
+            conversions = trader_data.decode_json("conversions")
 
-        conversions = 1
         return final_orders, conversions, trader_data.get_trader_data()
