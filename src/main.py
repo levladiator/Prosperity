@@ -334,7 +334,7 @@ class Trader:
                                                 trader_data)
 
     @staticmethod
-    def compute_orders_orchids(order_depths, position, observations, acc_bid, acc_ask, trader_data: TraderData):
+    def compute_orders_orchids(order_depths, position, observations, own_trades, trader_data: TraderData):
         """
         Production decreases with 4% every 10 minutes of sunlight exposure being less than 7h per day.
         Production decreases with 2% for every 5% change in humidity compared to its optimal range, which is [60%, 80%].
@@ -361,27 +361,38 @@ class Trader:
 
         conv_buy_pr = observations.askPrice + observations.transportFees + observations.importTariff
 
-        if not trader_data.is_encoded("reached_short"):
-            if position <= -50:
-                trader_data.add_object_encoding("reached_short", True)
-            else:
-                order_volume = max(-highest_bid_vol, -pos_limit - curr_pos)
-                order_price = highest_bid_pr
-                curr_pos += order_volume
-                orders.append(Order(product, order_price, order_volume))
-        else:
-            for bid, vol in buy_orders.items():
-                if curr_pos <= -pos_limit:
-                    break
+        # if not trader_data.is_encoded("reached_short"):
+        #     if position <= -50:
+        #         trader_data.add_object_encoding("reached_short", True)
+        #     else:
+        #         order_volume = max(-highest_bid_vol, -pos_limit - curr_pos)
+        #         order_price = highest_bid_pr
+        #         curr_pos += order_volume
+        #         orders.append(Order(product, order_price, order_volume))
+        # else:
+        #     for bid, vol in buy_orders.items():
+        #         if curr_pos <= -pos_limit:
+        #             break
+        #
+        #         if bid > conv_buy_pr:
+        #             order_volume = max(-vol, -pos_limit - curr_pos)
+        #             order_price = bid
+        #             curr_pos += order_volume
+        #             orders.append(Order(product, order_price, order_volume))
+        #             conversions -= order_volume
 
-                if bid > conv_buy_pr:
-                    order_volume = max(-vol, -pos_limit - curr_pos)
-                    order_price = bid
-                    curr_pos += order_volume
-                    orders.append(Order(product, order_price, order_volume))
-                    conversions -= order_volume
+        # conversions = min(-position, conversions)
 
-        conversions = min(-position, conversions)
+        if curr_pos > -pos_limit:
+            order_volume = -pos_limit - curr_pos
+            order_price = round(conv_buy_pr + 2)
+            curr_pos += order_volume
+            orders.append(Order(product, order_price, order_volume))
+
+        if not own_trades is None:
+            for trade in own_trades:
+                if trade.symbol == "ORCHIDS":
+                    conversions += trade.quantity
 
         if trader_data.is_encoded("conversions"):
             trader_data.update_values("conversions", conversions)
@@ -432,8 +443,7 @@ class Trader:
             self.compute_orders_orchids(state.order_depths["ORCHIDS"],
                                         state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
                                         state.observations.conversionObservations["ORCHIDS"],
-                                        -INF,
-                                        INF,
+                                        state.own_trades["ORCHIDS"] if "ORCHIDS" in state.own_trades else None,
                                         trader_data))
         conversions = None
         if trader_data.is_encoded("conversions"):
