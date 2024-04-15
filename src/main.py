@@ -360,28 +360,9 @@ class Trader:
         highest_bid_vol = buy_orders[highest_bid_pr]
 
         conv_buy_pr = observations.askPrice + observations.transportFees + observations.importTariff
+        conv_sell_pr = observations.bidPrice - observations.transportFees - observations.exportTariff
 
-        # if not trader_data.is_encoded("reached_short"):
-        #     if position <= -50:
-        #         trader_data.add_object_encoding("reached_short", True)
-        #     else:
-        #         order_volume = max(-highest_bid_vol, -pos_limit - curr_pos)
-        #         order_price = highest_bid_pr
-        #         curr_pos += order_volume
-        #         orders.append(Order(product, order_price, order_volume))
-        # else:
-        #     for bid, vol in buy_orders.items():
-        #         if curr_pos <= -pos_limit:
-        #             break
-        #
-        #         if bid > conv_buy_pr:
-        #             order_volume = max(-vol, -pos_limit - curr_pos)
-        #             order_price = bid
-        #             curr_pos += order_volume
-        #             orders.append(Order(product, order_price, order_volume))
-        #             conversions -= order_volume
-
-        # conversions = min(-position, conversions)
+        spread = conv_buy_pr - highest_bid_pr
 
         if curr_pos > -pos_limit:
             order_volume = -pos_limit - curr_pos
@@ -426,18 +407,18 @@ class Trader:
             )
             trader_data.add_object_encoding("forecast_starfruit", forecast_starfruit)
 
-        # final_orders["AMETHYSTS"] += (
-        #     Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
-        #                                     state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-        #                                     10000,
-        #                                     10000,
-        #                                     trader_data))
-        #
-        # final_orders["STARFRUIT"] += (
-        #     Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
-        #                                     state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
-        #                                     forecast_starfruit,
-        #                                     trader_data))
+        final_orders["AMETHYSTS"] += (
+            Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
+                                            state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+                                            10000,
+                                            10000,
+                                            trader_data))
+
+        final_orders["STARFRUIT"] += (
+            Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
+                                            state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
+                                            forecast_starfruit,
+                                            trader_data))
 
         final_orders["ORCHIDS"] += (
             self.compute_orders_orchids(state.order_depths["ORCHIDS"],
