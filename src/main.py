@@ -384,18 +384,29 @@ class Trader:
 
         return orders
 
+    @staticmethod
+    def compute_orders_basket(order_depths, positions, trader_data: TraderData):
+        """
+        1 basket contains: 6 strawberries, 4 chocolates and 1 rose
+        """
+        products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
+        orders = []
+
+        pos_limit = trader_data.decode_json("POSITION_LIMIT")[products[0]]
+
+        return orders
+
     def run(self, state: TradingState):
-        final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": []}
-        INF = 1e9
         trader_data = TraderData(state.traderData)
         if not trader_data.is_encoded("timestamp"):
             trader_data.add_object_encoding("timestamp", state.timestamp)
         else:
             trader_data.update_values("timestamp", state.timestamp)
-
         if not trader_data.is_encoded("POSITION_LIMIT"):
-            POSITION_LIMIT = {"AMETHYSTS": 20, "STARFRUIT": 20, "ORCHIDS": 100}
+            POSITION_LIMIT = {"AMETHYSTS": 20, "STARFRUIT": 20, "ORCHIDS": 100, "CHOCOLATE": 250,
+                              "STRAWBERRIES": 350, "ROSES": 60, "GIFT_BASKET": 60}
             trader_data.add_object_encoding("POSITION_LIMIT", POSITION_LIMIT)
+
         if trader_data.is_encoded("forecast_starfruit"):
             forecast_starfruit = trader_data.decode_json("forecast_starfruit")
         else:
@@ -407,25 +418,34 @@ class Trader:
             )
             trader_data.add_object_encoding("forecast_starfruit", forecast_starfruit)
 
-        final_orders["AMETHYSTS"] += (
-            Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
-                                            state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-                                            10000,
-                                            10000,
-                                            trader_data))
+        final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": []}
 
-        final_orders["STARFRUIT"] += (
-            Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
-                                            state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
-                                            forecast_starfruit,
-                                            trader_data))
+        # final_orders["AMETHYSTS"] += (
+        #     Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
+        #                                     state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+        #                                     10000,
+        #                                     10000,
+        #                                     trader_data))
+        #
+        # final_orders["STARFRUIT"] += (
+        #     Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
+        #                                     state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
+        #                                     forecast_starfruit,
+        #                                     trader_data))
+        #
+        # final_orders["ORCHIDS"] += (
+        #     self.compute_orders_orchids(state.order_depths["ORCHIDS"],
+        #                                 state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
+        #                                 state.observations.conversionObservations["ORCHIDS"],
+        #                                 state.own_trades["ORCHIDS"] if "ORCHIDS" in state.own_trades else None,
+        #                                 trader_data))
 
-        final_orders["ORCHIDS"] += (
-            self.compute_orders_orchids(state.order_depths["ORCHIDS"],
-                                        state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
-                                        state.observations.conversionObservations["ORCHIDS"],
-                                        state.own_trades["ORCHIDS"] if "ORCHIDS" in state.own_trades else None,
-                                        trader_data))
+        final_orders["GIFT_BASKET"] += (
+            self.compute_orders_basket(state.order_depths,
+                                       state.position,
+                                       trader_data)
+        )
+
         conversions = None
         if trader_data.is_encoded("conversions"):
             conversions = trader_data.decode_json("conversions")
