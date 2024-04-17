@@ -392,7 +392,51 @@ class Trader:
         products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
         orders = []
 
-        pos_limit = trader_data.decode_json("POSITION_LIMIT")[products[0]]
+        pos_limits = trader_data.decode_json("POSITION_LIMIT")
+
+        osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
+
+        basket_std = 45
+
+        for p in products:
+            osell[p] = order_depths[p].sell_orders
+            obuy[p] = order_depths[p].buy_orders
+
+            best_sell[p] = next(iter(osell[p]))
+            best_buy[p] = next(iter(obuy[p]))
+
+            worst_sell[p] = next(reversed(osell[p]))
+            worst_buy[p] = next(reversed(obuy[p]))
+
+            mid_price[p] = (best_sell[p] + best_buy[p]) / 2
+            vol_buy[p], vol_sell[p] = 0, 0
+
+            for price, vol in obuy[p].items():
+                vol_buy[p] += vol
+
+            for price, vol in osell[p].items():
+                vol_sell[p] += -vol
+
+        res_buy = mid_price['GIFT_BASKET'] - mid_price['STRAWBERRIES'] * 6 - mid_price['CHOCOLATE'] * 4 - mid_price[
+            'ROSES'] - 380
+        res_sell = mid_price['GIFT_BASKET'] - mid_price['STRAWBERRIES'] * 6 - mid_price['CHOCOLATE'] * 4 - mid_price[
+            'ROSES'] - 380
+
+        trader_data.update_values("average", trader_data.decode_json("average") + res_buy)
+
+        trade_at = basket_std
+
+        pos = positions['GIFT_BASKET'] if "GIFT_BASKET" in positions else 0
+
+        if res_sell > trade_at:
+            vol = pos + pos_limits['GIFT_BASKET']
+            if vol > 0:
+                orders.append(Order('GIFT_BASKET', worst_buy['GIFT_BASKET'], -vol))
+
+        elif res_buy < -trade_at:
+            vol = pos_limits['GIFT_BASKET'] - pos
+            if vol > 0:
+                orders.append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], vol))
 
         return orders
 
@@ -402,6 +446,7 @@ class Trader:
             trader_data.add_object_encoding("timestamp", state.timestamp)
         else:
             trader_data.update_values("timestamp", state.timestamp)
+
         if not trader_data.is_encoded("POSITION_LIMIT"):
             POSITION_LIMIT = {"AMETHYSTS": 20, "STARFRUIT": 20, "ORCHIDS": 100, "CHOCOLATE": 250,
                               "STRAWBERRIES": 350, "ROSES": 60, "GIFT_BASKET": 60}
@@ -418,7 +463,11 @@ class Trader:
             )
             trader_data.add_object_encoding("forecast_starfruit", forecast_starfruit)
 
-        final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": []}
+        if not trader_data.is_encoded("average"):
+            trader_data.add_object_encoding("average", 0)
+
+
+        final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": [], "GIFT_BASKET": []}
 
         # final_orders["AMETHYSTS"] += (
         #     Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
@@ -445,6 +494,8 @@ class Trader:
                                        state.position,
                                        trader_data)
         )
+
+        print(trader_data.decode_json("average"))
 
         conversions = None
         if trader_data.is_encoded("conversions"):
