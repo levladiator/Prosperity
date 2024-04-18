@@ -477,7 +477,7 @@ class Trader:
                       "STRAWBERRIES": 350, "ROSES": 60, "GIFT_BASKET": 60}
         products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
         orders = []
-        window_size = 250
+        window_size = 2000
         choco_pos = positions['CHOCOLATE'] if "CHOCOLATE" in positions else 0
 
         timestamp = round(trader_data.decode_json("timestamp") / 100)
@@ -788,7 +788,7 @@ class Trader:
 
         final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": [], "GIFT_BASKET": [], "CHOCOLATE": [],
                         "STRAWBERRIES": [], "ROSES": []}
-        start_time = pd.Timestamp.now()
+
         final_orders["AMETHYSTS"] += (
             Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
                                             state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
@@ -832,7 +832,6 @@ class Trader:
                                              state.position,
                                              trader_data)
         )
-        end_time = pd.Timestamp.now()
-        print("Total runtime: " + str(end_time - start_time))
+
         conversions = trader_data.decode_json("conversions")
         return final_orders, conversions, trader_data.get_trader_data()
