@@ -371,7 +371,7 @@ class Trader:
 
         if curr_pos > -pos_limit:
             order_volume = -pos_limit - curr_pos
-            order_price = round(conv_buy_pr + 2)
+            order_price = round(conv_buy_pr + 1.25)
             curr_pos += order_volume
             orders.append(Order(product, order_price, order_volume))
 
@@ -617,13 +617,13 @@ class Trader:
                 (roses_sq_sum - 2 * roses_sum * roses_mean + timestamp_window * roses_mean ** 2) / timestamp_window)
 
             if (curr_spread > basket_mean + 1.5 * basket_std
-                    and roses_price > roses_mean + 0.8 * roses_std):
+                    and roses_price > roses_mean + 1.0 * roses_std):
                 vol = roses_pos + pos_limits['ROSES']
                 if vol > 0:
                     orders.append(Order('ROSES', worst_buy['ROSES'], -vol))
 
             elif (curr_spread < basket_mean - 1.5 * basket_std
-                  and roses_price < roses_mean - 0.8 * roses_std):
+                  and roses_price < roses_mean - 1.0 * roses_std):
                 vol = pos_limits['ROSES'] - roses_pos
                 if vol > 0:
                     orders.append(Order('ROSES', worst_sell['ROSES'], vol))
