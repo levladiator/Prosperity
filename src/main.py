@@ -261,7 +261,7 @@ class Trader:
             if curr_pos >= pos_limit:
                 break
 
-            if ask <= acc_bid or (ask == acc_bid + 1 and position <= -10):
+            if ask <= acc_bid or (ask == acc_bid + 1 and position <= -5):
                 order_volume = min(-vol, pos_limit - curr_pos)
                 order_price = ask
                 curr_pos += order_volume
@@ -270,9 +270,7 @@ class Trader:
         if curr_pos < pos_limit:
             order_volume = min(2 * pos_limit, pos_limit - curr_pos)
 
-            if curr_pos < -15:
-                order_price = min(best_bid + 3, acc_bid - 1)
-            elif curr_pos < 0:
+            if curr_pos < 0:
                 order_price = min(best_bid + 2, acc_bid - 1)
             elif curr_pos < 15:
                 order_price = min(best_bid + 1, acc_bid - 1)
@@ -288,7 +286,7 @@ class Trader:
             if curr_pos <= -pos_limit:
                 break
 
-            if bid >= acc_ask or (bid == acc_ask - 1 and position >= 10):
+            if bid >= acc_ask or (bid == acc_ask - 1 and position >= 5):
                 order_volume = max(-vol, -pos_limit - curr_pos)
                 order_price = bid
                 curr_pos += order_volume
@@ -297,9 +295,7 @@ class Trader:
         if curr_pos > -pos_limit:
             order_volume = max(-2 * pos_limit, -pos_limit - curr_pos)
 
-            if curr_pos > 15:
-                order_price = max(best_ask - 3, acc_ask + 1)
-            elif curr_pos > 0:
+            if curr_pos > 0:
                 order_price = max(best_ask - 2, acc_ask + 1)
             elif curr_pos > -15:
                 order_price = max(best_ask - 1, acc_ask + 1)
