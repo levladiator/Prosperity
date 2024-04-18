@@ -5,7 +5,6 @@ from datamodel import TradingState, Order
 from collections import deque
 
 
-
 class TraderData:
     def __init__(self, trader_data: str):
         self.trader_data = trader_data
@@ -167,7 +166,7 @@ class Utils:
         bid_weighted_val /= bid_vol
 
         # See more: https://quant.stackexchange.com/questions/50651/how-to-understand-micro-price-aka-weighted-mid-price
-        return (ask_weighted_val * bid_vol + bid_weighted_val * ask_vol) / (ask_vol + bid_vol)
+        return (ask_weighted_val * bid_vol + bid_weighted_val * ask_vol) // (ask_vol + bid_vol)
 
 
 class Trader:
@@ -400,6 +399,8 @@ class Trader:
 
         osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
 
+        weighted_price = {}
+
         for p in products:
             osell[p] = order_depths[p].sell_orders
             obuy[p] = order_depths[p].buy_orders
@@ -411,8 +412,9 @@ class Trader:
             worst_buy[p] = next(reversed(obuy[p]))
 
             mid_price[p] = (best_sell[p] + best_buy[p]) / 2
-            vol_buy[p], vol_sell[p] = 0, 0
+            weighted_price[p] = Utils.extract_weighted_price(obuy[p], osell[p])
 
+            vol_buy[p], vol_sell[p] = 0, 0
             for price, vol in obuy[p].items():
                 vol_buy[p] += vol
 
@@ -422,16 +424,13 @@ class Trader:
         curr_spread = (mid_price['GIFT_BASKET'] -
                        (6 * mid_price['STRAWBERRIES'] + 4 * mid_price['CHOCOLATE'] + mid_price['ROSES']))
 
-        basket_sum = trader_data.decode_json("basket_sum")
-        basket_sq_sum = trader_data.decode_json("basket_sq_sum")
+        basket_sum = trader_data.decode_json("real_basket_sum")
+        basket_sq_sum = trader_data.decode_json("real_basket_sq_sum")
 
         if timestamp > 1:
             basket_mean = basket_sum / timestamp
             basket_std = np.sqrt(
-                    (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp * basket_mean ** 2) / timestamp)
-
-            std_diff = (curr_spread - basket_mean) / basket_std
-            vol_coef = std_diff / 2.0
+                (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp * basket_mean ** 2) / timestamp)
 
             if curr_spread > basket_mean + 1.5 * basket_std:
                 vol = basket_pos + pos_limits['GIFT_BASKET']
@@ -443,8 +442,252 @@ class Trader:
                 if vol > 0:
                     orders.append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], vol))
 
-        trader_data.update_values("basket_sum", basket_sum + curr_spread)
-        trader_data.update_values("basket_sq_sum", basket_sq_sum + curr_spread ** 2)
+            print("Pairs spread: ", curr_spread)
+            print("Upper threshold: ", basket_mean + 1.5 * basket_std)
+            print("Lower threshold: ", basket_mean - 1.5 * basket_std)
+            print("Price spread: ", best_sell["GIFT_BASKET"] - best_buy["GIFT_BASKET"])
+
+        trader_data.update_values("real_basket_sum", basket_sum + curr_spread)
+        trader_data.update_values("real_basket_sq_sum", basket_sq_sum + curr_spread ** 2)
+
+        return orders
+
+    @staticmethod
+    def compute_orders_chocolate(order_depths, positions, trader_data: TraderData):
+        """
+        1 basket contains: 6 strawberries, 4 chocolates and 1 rose
+        """
+        products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
+        orders = []
+
+        pos_limits = trader_data.decode_json("POSITION_LIMIT")
+        choco_pos = positions['CHOCOLATE'] if "CHOCOLATE" in positions else 0
+
+        timestamp = trader_data.decode_json("timestamp") / 100
+
+        osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
+
+        weighted_price = {}
+
+        for p in products:
+            osell[p] = order_depths[p].sell_orders
+            obuy[p] = order_depths[p].buy_orders
+
+            best_sell[p] = next(iter(osell[p]))
+            best_buy[p] = next(iter(obuy[p]))
+
+            worst_sell[p] = next(reversed(osell[p]))
+            worst_buy[p] = next(reversed(obuy[p]))
+
+            mid_price[p] = (best_sell[p] + best_buy[p]) / 2
+            weighted_price[p] = Utils.extract_weighted_price(obuy[p], osell[p])
+
+            vol_buy[p], vol_sell[p] = 0, 0
+            for price, vol in obuy[p].items():
+                vol_buy[p] += vol
+
+            for price, vol in osell[p].items():
+                vol_sell[p] += -vol
+
+        curr_spread = (mid_price['GIFT_BASKET'] -
+                       (6 * mid_price['STRAWBERRIES'] + mid_price['ROSES']))
+
+        basket_sum = trader_data.decode_json("choco_basket_sum")
+        basket_sq_sum = trader_data.decode_json("choco_basket_sq_sum")
+
+        choco_price = mid_price["CHOCOLATE"]
+
+        choco_sum = trader_data.decode_json("choco_sum")
+        choco_sq_sum = trader_data.decode_json("choco_sq_sum")
+
+        if timestamp > 1:
+            basket_mean = basket_sum / timestamp
+            basket_std = np.sqrt(
+                (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp * basket_mean ** 2) / timestamp)
+
+            choco_mean = choco_sum / timestamp
+            choco_std = np.sqrt(
+                (choco_sq_sum - 2 * choco_sum * choco_mean + timestamp * choco_mean ** 2) / timestamp)
+
+            if (curr_spread > basket_mean + 1.5 * basket_std
+                    and choco_price > choco_mean + 1.0 * choco_std):
+                vol = choco_pos + pos_limits['CHOCOLATE']
+                if vol > 0:
+                    orders.append(Order('CHOCOLATE', worst_buy['CHOCOLATE'], -vol))
+
+            elif (curr_spread < basket_mean - 1.5 * basket_std
+                  and choco_price < choco_mean - 1.0 * choco_std):
+                vol = pos_limits['CHOCOLATE'] - choco_pos
+                if vol > 0:
+                    orders.append(Order('CHOCOLATE', worst_sell['CHOCOLATE'], vol))
+
+            # print("Pairs spread: ", curr_spread)
+            # print("Upper threshold basket: ", basket_mean + 1.5 * basket_std)
+            # print("Lower threshold basket: ", basket_mean - 1.5 * basket_std)
+            # print("Choco price: ", choco_price)
+            # print("Upper threshold choco: ", choco_mean + 1.5 * choco_std)
+            # print("Lower threshold choco: ", choco_mean - 1.5 * choco_std)
+
+        trader_data.update_values("choco_basket_sum", basket_sum + curr_spread)
+        trader_data.update_values("choco_basket_sq_sum", basket_sq_sum + curr_spread ** 2)
+
+        trader_data.update_values("choco_sum", choco_sum + choco_price)
+        trader_data.update_values("choco_sq_sum", choco_sq_sum + choco_price ** 2)
+
+        return orders
+
+    @staticmethod
+    def compute_orders_roses(order_depths, positions, trader_data: TraderData):
+        """
+        1 basket contains: 6 strawberries, 4 chocolates and 1 rose
+        """
+        products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
+        orders = []
+
+        pos_limits = trader_data.decode_json("POSITION_LIMIT")
+        roses_pos = positions['ROSES'] if "ROSES" in positions else 0
+
+        timestamp = trader_data.decode_json("timestamp") / 100
+
+        osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
+
+        weighted_price = {}
+
+        for p in products:
+            osell[p] = order_depths[p].sell_orders
+            obuy[p] = order_depths[p].buy_orders
+
+            best_sell[p] = next(iter(osell[p]))
+            best_buy[p] = next(iter(obuy[p]))
+
+            worst_sell[p] = next(reversed(osell[p]))
+            worst_buy[p] = next(reversed(obuy[p]))
+
+            mid_price[p] = (best_sell[p] + best_buy[p]) / 2
+            weighted_price[p] = Utils.extract_weighted_price(obuy[p], osell[p])
+
+            vol_buy[p], vol_sell[p] = 0, 0
+            for price, vol in obuy[p].items():
+                vol_buy[p] += vol
+
+            for price, vol in osell[p].items():
+                vol_sell[p] += -vol
+
+        curr_spread = (mid_price['GIFT_BASKET'] -
+                       (6 * mid_price['STRAWBERRIES'] + 4 * mid_price['CHOCOLATE']))
+
+        basket_sum = trader_data.decode_json("roses_basket_sum")
+        basket_sq_sum = trader_data.decode_json("roses_basket_sq_sum")
+
+        roses_price = mid_price["ROSES"]
+
+        roses_sum = trader_data.decode_json("roses_sum")
+        roses_sq_sum = trader_data.decode_json("roses_sq_sum")
+
+        if timestamp > 1:
+            basket_mean = basket_sum / timestamp
+            basket_std = np.sqrt(
+                (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp * basket_mean ** 2) / timestamp)
+
+            roses_mean = roses_sum / timestamp
+            roses_std = np.sqrt(
+                (roses_sq_sum - 2 * roses_sum * roses_mean + timestamp * roses_mean ** 2) / timestamp)
+
+            if (curr_spread > basket_mean + 1.5 * basket_std
+                    and roses_price > roses_mean + 0.8 * roses_std):
+                vol = roses_pos + pos_limits['ROSES']
+                if vol > 0:
+                    orders.append(Order('ROSES', worst_buy['ROSES'], -vol))
+
+            elif (curr_spread < basket_mean - 1.5 * basket_std
+                  and roses_price < roses_mean - 0.8 * roses_std):
+                vol = pos_limits['ROSES'] - roses_pos
+                if vol > 0:
+                    orders.append(Order('ROSES', worst_sell['ROSES'], vol))
+
+        trader_data.update_values("roses_basket_sum", basket_sum + curr_spread)
+        trader_data.update_values("roses_basket_sq_sum", basket_sq_sum + curr_spread ** 2)
+
+        trader_data.update_values("roses_sum", roses_sum + roses_price)
+        trader_data.update_values("roses_sq_sum", roses_sq_sum + roses_price ** 2)
+
+        return orders
+
+    @staticmethod
+    def compute_orders_strawberries(order_depths, positions, trader_data: TraderData):
+        """
+        1 basket contains: 6 strawberries, 4 chocolates and 1 rose
+        """
+        products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
+        orders = []
+
+        pos_limits = trader_data.decode_json("POSITION_LIMIT")
+        strawberries_pos = positions['STRAWBERRIES'] if "STRAWBERRIES" in positions else 0
+
+        timestamp = trader_data.decode_json("timestamp") / 100
+
+        osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
+
+        weighted_price = {}
+
+        for p in products:
+            osell[p] = order_depths[p].sell_orders
+            obuy[p] = order_depths[p].buy_orders
+
+            best_sell[p] = next(iter(osell[p]))
+            best_buy[p] = next(iter(obuy[p]))
+
+            worst_sell[p] = next(reversed(osell[p]))
+            worst_buy[p] = next(reversed(obuy[p]))
+
+            mid_price[p] = (best_sell[p] + best_buy[p]) / 2
+            weighted_price[p] = Utils.extract_weighted_price(obuy[p], osell[p])
+
+            vol_buy[p], vol_sell[p] = 0, 0
+            for price, vol in obuy[p].items():
+                vol_buy[p] += vol
+
+            for price, vol in osell[p].items():
+                vol_sell[p] += -vol
+
+        curr_spread = (mid_price['GIFT_BASKET'] -
+                       (1 * mid_price['ROSES'] + 4 * mid_price['CHOCOLATE']))
+
+        basket_sum = trader_data.decode_json("strawberries_basket_sum")
+        basket_sq_sum = trader_data.decode_json("strawberries_basket_sq_sum")
+
+        strawberries_price = mid_price["STRAWBERRIES"]
+
+        strawberries_sum = trader_data.decode_json("strawberries_sum")
+        strawberries_sq_sum = trader_data.decode_json("strawberries_sq_sum")
+
+        if timestamp > 1:
+            basket_mean = basket_sum / timestamp
+            basket_std = np.sqrt(
+                (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp * basket_mean ** 2) / timestamp)
+
+            strawberries_mean = strawberries_sum / timestamp
+            strawberries_std = np.sqrt(
+                (strawberries_sq_sum - 2 * strawberries_sum * strawberries_mean + timestamp * strawberries_mean ** 2)
+                / timestamp)
+
+            if (curr_spread > basket_mean + 1.5 * basket_std
+                    and strawberries_price > strawberries_mean + 1.0 * strawberries_std):
+                vol = strawberries_pos + pos_limits['STRAWBERRIES']
+                if vol > 0:
+                    orders.append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -vol))
+
+            elif (curr_spread < basket_mean - 1.5 * basket_std
+                  and strawberries_price < strawberries_mean - 1.0 * strawberries_std):
+                vol = pos_limits['STRAWBERRIES'] - strawberries_pos
+                if vol > 0:
+                    orders.append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], vol))
+
+        trader_data.update_values("strawberries_basket_sum", basket_sum + curr_spread)
+        trader_data.update_values("strawberries_basket_sq_sum", basket_sq_sum + curr_spread ** 2)
+
+        trader_data.update_values("strawberries_sum", strawberries_sum + strawberries_price)
+        trader_data.update_values("strawberries_sq_sum", strawberries_sq_sum + strawberries_price ** 2)
 
         return orders
 
@@ -471,13 +714,50 @@ class Trader:
             )
             trader_data.add_object_encoding("forecast_starfruit", forecast_starfruit)
 
-        if not trader_data.is_encoded("basket_sum"):
-            trader_data.add_object_encoding("basket_sum", 0)
+        if not trader_data.is_encoded("real_basket_sum"):
+            trader_data.add_object_encoding("real_basket_sum", 0)
 
-        if not trader_data.is_encoded("basket_sq_sum"):
-            trader_data.add_object_encoding("basket_sq_sum", 0)
+        if not trader_data.is_encoded("real_basket_sq_sum"):
+            trader_data.add_object_encoding("real_basket_sq_sum", 0)
 
-        final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": [], "GIFT_BASKET": []}
+        if not trader_data.is_encoded("choco_basket_sum"):
+            trader_data.add_object_encoding("choco_basket_sum", 0)
+
+        if not trader_data.is_encoded("choco_basket_sq_sum"):
+            trader_data.add_object_encoding("choco_basket_sq_sum", 0)
+
+        if not trader_data.is_encoded("choco_sum"):
+            trader_data.add_object_encoding("choco_sum", 0)
+
+        if not trader_data.is_encoded("choco_sq_sum"):
+            trader_data.add_object_encoding("choco_sq_sum", 0)
+
+        if not trader_data.is_encoded("roses_basket_sum"):
+            trader_data.add_object_encoding("roses_basket_sum", 0)
+
+        if not trader_data.is_encoded("roses_basket_sq_sum"):
+            trader_data.add_object_encoding("roses_basket_sq_sum", 0)
+
+        if not trader_data.is_encoded("roses_sum"):
+            trader_data.add_object_encoding("roses_sum", 0)
+
+        if not trader_data.is_encoded("roses_sq_sum"):
+            trader_data.add_object_encoding("roses_sq_sum", 0)
+
+        if not trader_data.is_encoded("strawberries_basket_sum"):
+            trader_data.add_object_encoding("strawberries_basket_sum", 0)
+
+        if not trader_data.is_encoded("strawberries_basket_sq_sum"):
+            trader_data.add_object_encoding("strawberries_basket_sq_sum", 0)
+
+        if not trader_data.is_encoded("strawberries_sum"):
+            trader_data.add_object_encoding("strawberries_sum", 0)
+
+        if not trader_data.is_encoded("strawberries_sq_sum"):
+            trader_data.add_object_encoding("strawberries_sq_sum", 0)
+
+        final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": [], "GIFT_BASKET": [], "CHOCOLATE": [],
+                        "STRAWBERRIES": [], "ROSES": []}
 
         final_orders["AMETHYSTS"] += (
             Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
@@ -503,6 +783,24 @@ class Trader:
             self.compute_orders_basket(state.order_depths,
                                        state.position,
                                        trader_data)
+        )
+
+        final_orders["CHOCOLATE"] += (
+            self.compute_orders_chocolate(state.order_depths,
+                                          state.position,
+                                          trader_data)
+        )
+
+        final_orders["ROSES"] += (
+            self.compute_orders_roses(state.order_depths,
+                                      state.position,
+                                      trader_data)
+        )
+
+        final_orders["STRAWBERRIES"] += (
+            self.compute_orders_strawberries(state.order_depths,
+                                             state.position,
+                                             trader_data)
         )
 
         conversions = None
