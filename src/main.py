@@ -399,7 +399,7 @@ class Trader:
                       "STRAWBERRIES": 350, "ROSES": 60, "GIFT_BASKET": 60}
         products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
         orders = []
-        window_size = 2000
+        window_size = 1000
         basket_pos = positions['GIFT_BASKET'] if "GIFT_BASKET" in positions else 0
 
         timestamp = round(trader_data.decode_json("timestamp") / 100)
@@ -477,7 +477,7 @@ class Trader:
                       "STRAWBERRIES": 350, "ROSES": 60, "GIFT_BASKET": 60}
         products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
         orders = []
-        window_size = 2000
+        window_size = 1000
         choco_pos = positions['CHOCOLATE'] if "CHOCOLATE" in positions else 0
 
         timestamp = round(trader_data.decode_json("timestamp") / 100)
@@ -663,7 +663,7 @@ class Trader:
                       "STRAWBERRIES": 350, "ROSES": 60, "GIFT_BASKET": 60}
         products = ["GIFT_BASKET", "CHOCOLATE", "STRAWBERRIES", "ROSES"]
         orders = []
-        window_size = 2000
+        window_size = 1000
         strawberries_pos = positions['STRAWBERRIES'] if "STRAWBERRIES" in positions else 0
 
         timestamp = round(trader_data.decode_json("timestamp") / 100)
