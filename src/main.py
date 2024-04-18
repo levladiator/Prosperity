@@ -419,66 +419,32 @@ class Trader:
             for price, vol in osell[p].items():
                 vol_sell[p] += -vol
 
-        sum_spread = trader_data.decode_json("average")
-
         curr_spread = (mid_price['GIFT_BASKET'] -
                        (6 * mid_price['STRAWBERRIES'] + 4 * mid_price['CHOCOLATE'] + mid_price['ROSES']))
 
-        avg_spread = ((sum_spread + curr_spread) / (timestamp + 2))
-
-        spread_diff = curr_spread - avg_spread
-
         basket_sum = trader_data.decode_json("basket_sum")
-        trader_data.update_values("basket_sum", basket_sum + curr_spread)
-
         basket_sq_sum = trader_data.decode_json("basket_sq_sum")
+
+        if timestamp > 1:
+            basket_mean = basket_sum / timestamp
+            basket_std = np.sqrt(
+                    (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp * basket_mean ** 2) / timestamp)
+
+            std_diff = (curr_spread - basket_mean) / basket_std
+            vol_coef = std_diff / 2.0
+
+            if curr_spread > basket_mean + 1.5 * basket_std:
+                vol = basket_pos + pos_limits['GIFT_BASKET']
+                if vol > 0:
+                    orders.append(Order('GIFT_BASKET', worst_buy['GIFT_BASKET'], -vol))
+
+            elif curr_spread < basket_mean - 1.5 * basket_std:
+                vol = pos_limits['GIFT_BASKET'] - basket_pos
+                if vol > 0:
+                    orders.append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], vol))
+
+        trader_data.update_values("basket_sum", basket_sum + curr_spread)
         trader_data.update_values("basket_sq_sum", basket_sq_sum + curr_spread ** 2)
-
-        trade_at = 25
-
-        if spread_diff > trade_at:
-            vol = basket_pos + pos_limits['GIFT_BASKET']
-            if vol > 0:
-                orders.append(Order('GIFT_BASKET', worst_buy['GIFT_BASKET'], -vol))
-
-        elif spread_diff < -trade_at:
-            vol = pos_limits['GIFT_BASKET'] - basket_pos
-            if vol > 0:
-                orders.append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], vol))
-
-        hedge_ratio = 1.0431981355324116
-
-        s = (np.log(mid_price['GIFT_BASKET']) -
-             hedge_ratio * np.log(6 * mid_price['STRAWBERRIES'] + 4 * mid_price['CHOCOLATE'] + mid_price['ROSES']))
-
-
-
-        z_score = 0
-
-        # if timestamp > 10:
-        #     basket_mean = basket_sum / timestamp
-        #     basket_std = np.sqrt(
-        #         (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp * basket_mean ** 2) / timestamp)
-        #
-        #     z_score = (s - basket_mean) / basket_std
-        #
-        #     if z_score > -1.0:
-        #         vol = basket_pos + pos_limits['GIFT_BASKET']
-        #         if vol > 0:
-        #             orders.append(Order('GIFT_BASKET', worst_buy['GIFT_BASKET'], -vol))
-        #
-        #     elif z_score < -1.5:
-        #         vol = pos_limits['GIFT_BASKET'] - basket_pos
-        #         if vol > 0:
-        #             orders.append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], vol))
-        #
-        #     print("Position: ", basket_pos)
-        #     print("Current spread: ", s)
-        #     print("Mean: ", basket_mean)
-        #     print("Std: ", basket_std)
-        #     print("Z-Score: ", z_score)
-
-        trader_data.update_values("average", sum_spread + curr_spread)
 
         return orders
 
@@ -505,9 +471,6 @@ class Trader:
             )
             trader_data.add_object_encoding("forecast_starfruit", forecast_starfruit)
 
-        if not trader_data.is_encoded("average"):
-            trader_data.add_object_encoding("average", 390)
-
         if not trader_data.is_encoded("basket_sum"):
             trader_data.add_object_encoding("basket_sum", 0)
 
@@ -516,33 +479,31 @@ class Trader:
 
         final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": [], "GIFT_BASKET": []}
 
-        # final_orders["AMETHYSTS"] += (
-        #     Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
-        #                                     state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
-        #                                     10000,
-        #                                     10000,
-        #                                     trader_data))
-        #
-        # final_orders["STARFRUIT"] += (
-        #     Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
-        #                                     state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
-        #                                     forecast_starfruit,
-        #                                     trader_data))
-        #
-        # final_orders["ORCHIDS"] += (
-        #     self.compute_orders_orchids(state.order_depths["ORCHIDS"],
-        #                                 state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
-        #                                 state.observations.conversionObservations["ORCHIDS"],
-        #                                 state.own_trades["ORCHIDS"] if "ORCHIDS" in state.own_trades else None,
-        #                                 trader_data))
+        final_orders["AMETHYSTS"] += (
+            Trader.compute_orders_amethysts(state.order_depths["AMETHYSTS"],
+                                            state.position["AMETHYSTS"] if "AMETHYSTS" in state.position else 0,
+                                            10000,
+                                            10000,
+                                            trader_data))
+
+        final_orders["STARFRUIT"] += (
+            Trader.compute_orders_starfruit(state.order_depths["STARFRUIT"],
+                                            state.position["STARFRUIT"] if "STARFRUIT" in state.position else 0,
+                                            forecast_starfruit,
+                                            trader_data))
+
+        final_orders["ORCHIDS"] += (
+            self.compute_orders_orchids(state.order_depths["ORCHIDS"],
+                                        state.position["ORCHIDS"] if "ORCHIDS" in state.position else 0,
+                                        state.observations.conversionObservations["ORCHIDS"],
+                                        state.own_trades["ORCHIDS"] if "ORCHIDS" in state.own_trades else None,
+                                        trader_data))
 
         final_orders["GIFT_BASKET"] += (
             self.compute_orders_basket(state.order_depths,
                                        state.position,
                                        trader_data)
         )
-
-        print(trader_data.decode_json("average"))
 
         conversions = None
         if trader_data.is_encoded("conversions"):
