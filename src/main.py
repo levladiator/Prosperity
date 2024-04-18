@@ -174,14 +174,14 @@ class Utils:
         else:
             return curr_index + 1
 
+
 class Trader:
 
     @staticmethod
     def compute_orders_amethysts(order_depths, position, acc_bid, acc_ask, trader_data: TraderData):
         product = "AMETHYSTS"
         orders = []
-
-        pos_limit = trader_data.decode_json("POSITION_LIMIT")[product]
+        pos_limit = 20
 
         curr_pos = position
 
@@ -249,7 +249,7 @@ class Trader:
     def compute_orders_regression(order_depths, position, product, acc_bid, acc_ask, trader_data: TraderData):
         orders = []
         curr_pos = position
-        pos_limit = trader_data.decode_json("POSITION_LIMIT")[product]
+        pos_limit = 20
 
         buy_orders = order_depths.buy_orders
         sell_orders = order_depths.sell_orders
@@ -356,7 +356,7 @@ class Trader:
         conversions = 0
 
         curr_pos = position
-        pos_limit = trader_data.decode_json("POSITION_LIMIT")[product]
+        pos_limit = 100
 
         buy_orders = order_depths.buy_orders
         sell_orders = order_depths.sell_orders
@@ -709,7 +709,8 @@ class Trader:
 
             strawberries_mean = strawberries_sum / timestamp_window
             strawberries_std = np.sqrt(
-                (strawberries_sq_sum - 2 * strawberries_sum * strawberries_mean + timestamp_window * strawberries_mean ** 2)
+                (
+                            strawberries_sq_sum - 2 * strawberries_sum * strawberries_mean + timestamp_window * strawberries_mean ** 2)
                 / timestamp_window)
 
             if (curr_spread > basket_mean + 1.5 * basket_std
@@ -776,7 +777,7 @@ class Trader:
         trader_data.update_values("timestamp", state.timestamp)
 
         if state.timestamp == 0:
-            Trader.init(trader_data) # Add the object encoding to the trader data
+            Trader.init(trader_data)  # Add the object encoding to the trader data
 
         forecast_starfruit = Forecast(
             ar_coeffs=[-0.20290068103061853],
@@ -807,7 +808,6 @@ class Trader:
                                         state.observations.conversionObservations["ORCHIDS"],
                                         state.own_trades["ORCHIDS"] if "ORCHIDS" in state.own_trades else None,
                                         trader_data))
-
 
         final_orders["GIFT_BASKET"] += (
             self.compute_orders_basket(state.order_depths,
