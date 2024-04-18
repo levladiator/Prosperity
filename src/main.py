@@ -5,6 +5,7 @@ from datamodel import TradingState, Order
 from collections import deque
 
 
+
 class TraderData:
     def __init__(self, trader_data: str):
         self.trader_data = trader_data
@@ -342,9 +343,9 @@ class Trader:
         Export at bid price, only if position > 0, and pay transport fees + export tariffs.
         Import at ask price, ??only if position < 0??, and have to pay transport fees + import tariffs.
         """
-        print(jsonpickle.encode(order_depths))
-        print(jsonpickle.encode(observations))
-        print("Position:", position)
+        # print(jsonpickle.encode(order_depths))
+        # print(jsonpickle.encode(observations))
+        # print("Position:", position)
 
         product = "ORCHIDS"
         orders = []
@@ -380,7 +381,7 @@ class Trader:
         else:
             trader_data.add_object_encoding("conversions", conversions)
 
-        print(conversions)
+        # print(conversions)
 
         return orders
 
@@ -393,10 +394,11 @@ class Trader:
         orders = []
 
         pos_limits = trader_data.decode_json("POSITION_LIMIT")
+        basket_pos = positions['GIFT_BASKET'] if "GIFT_BASKET" in positions else 0
+
+        timestamp = trader_data.decode_json("timestamp") / 100
 
         osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
-
-        basket_std = 45
 
         for p in products:
             osell[p] = order_depths[p].sell_orders
@@ -417,26 +419,66 @@ class Trader:
             for price, vol in osell[p].items():
                 vol_sell[p] += -vol
 
-        res_buy = mid_price['GIFT_BASKET'] - mid_price['STRAWBERRIES'] * 6 - mid_price['CHOCOLATE'] * 4 - mid_price[
-            'ROSES'] - 380
-        res_sell = mid_price['GIFT_BASKET'] - mid_price['STRAWBERRIES'] * 6 - mid_price['CHOCOLATE'] * 4 - mid_price[
-            'ROSES'] - 380
+        sum_spread = trader_data.decode_json("average")
 
-        trader_data.update_values("average", trader_data.decode_json("average") + res_buy)
+        curr_spread = (mid_price['GIFT_BASKET'] -
+                       (6 * mid_price['STRAWBERRIES'] + 4 * mid_price['CHOCOLATE'] + mid_price['ROSES']))
 
-        trade_at = basket_std
+        avg_spread = ((sum_spread + curr_spread) / (timestamp + 2))
 
-        pos = positions['GIFT_BASKET'] if "GIFT_BASKET" in positions else 0
+        spread_diff = curr_spread - avg_spread
 
-        if res_sell > trade_at:
-            vol = pos + pos_limits['GIFT_BASKET']
+        basket_sum = trader_data.decode_json("basket_sum")
+        trader_data.update_values("basket_sum", basket_sum + curr_spread)
+
+        basket_sq_sum = trader_data.decode_json("basket_sq_sum")
+        trader_data.update_values("basket_sq_sum", basket_sq_sum + curr_spread ** 2)
+
+        trade_at = 25
+
+        if spread_diff > trade_at:
+            vol = basket_pos + pos_limits['GIFT_BASKET']
             if vol > 0:
                 orders.append(Order('GIFT_BASKET', worst_buy['GIFT_BASKET'], -vol))
 
-        elif res_buy < -trade_at:
-            vol = pos_limits['GIFT_BASKET'] - pos
+        elif spread_diff < -trade_at:
+            vol = pos_limits['GIFT_BASKET'] - basket_pos
             if vol > 0:
                 orders.append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], vol))
+
+        hedge_ratio = 1.0431981355324116
+
+        s = (np.log(mid_price['GIFT_BASKET']) -
+             hedge_ratio * np.log(6 * mid_price['STRAWBERRIES'] + 4 * mid_price['CHOCOLATE'] + mid_price['ROSES']))
+
+
+
+        z_score = 0
+
+        # if timestamp > 10:
+        #     basket_mean = basket_sum / timestamp
+        #     basket_std = np.sqrt(
+        #         (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp * basket_mean ** 2) / timestamp)
+        #
+        #     z_score = (s - basket_mean) / basket_std
+        #
+        #     if z_score > -1.0:
+        #         vol = basket_pos + pos_limits['GIFT_BASKET']
+        #         if vol > 0:
+        #             orders.append(Order('GIFT_BASKET', worst_buy['GIFT_BASKET'], -vol))
+        #
+        #     elif z_score < -1.5:
+        #         vol = pos_limits['GIFT_BASKET'] - basket_pos
+        #         if vol > 0:
+        #             orders.append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], vol))
+        #
+        #     print("Position: ", basket_pos)
+        #     print("Current spread: ", s)
+        #     print("Mean: ", basket_mean)
+        #     print("Std: ", basket_std)
+        #     print("Z-Score: ", z_score)
+
+        trader_data.update_values("average", sum_spread + curr_spread)
 
         return orders
 
@@ -464,8 +506,13 @@ class Trader:
             trader_data.add_object_encoding("forecast_starfruit", forecast_starfruit)
 
         if not trader_data.is_encoded("average"):
-            trader_data.add_object_encoding("average", 0)
+            trader_data.add_object_encoding("average", 390)
 
+        if not trader_data.is_encoded("basket_sum"):
+            trader_data.add_object_encoding("basket_sum", 0)
+
+        if not trader_data.is_encoded("basket_sq_sum"):
+            trader_data.add_object_encoding("basket_sq_sum", 0)
 
         final_orders = {"AMETHYSTS": [], "STARFRUIT": [], "ORCHIDS": [], "GIFT_BASKET": []}
 
