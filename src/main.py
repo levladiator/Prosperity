@@ -350,9 +350,10 @@ class Trader:
         product = "ORCHIDS"
         orders = []
         conversions = 0
-
+        timestamp = round(trader_data.decode_json("timestamp") / 100)
         curr_pos = position
         pos_limit = 100
+
 
         buy_orders = order_depths.buy_orders
         sell_orders = order_depths.sell_orders
@@ -369,6 +370,18 @@ class Trader:
             order_volume = -pos_limit - curr_pos
             order_price = round(conv_buy_pr + 1.25)
             curr_pos += order_volume
+
+            if timestamp > 0:
+                prev_sunlight = trader_data.decode_json("prev_sunlight")
+                prev_humidity = trader_data.decode_json("prev_humidity")
+                order_price = round(conv_buy_pr + 1.25)
+                humidity_signal = (((observations.humidity - prev_humidity > 0) and (prev_humidity > 80))
+                                   or ((observations.humidity - prev_humidity < 0) and (prev_humidity < 60)))
+                sunlight_signal = (((observations.sunlight - prev_sunlight) < 0) and (prev_sunlight < 2500))
+                if humidity_signal and sunlight_signal:
+                    order_price = round(conv_buy_pr + 1.8)
+                elif humidity_signal:
+                    order_price = round(conv_buy_pr + 1.6)
             orders.append(Order(product, order_price, order_volume))
 
         if not own_trades is None:
@@ -380,7 +393,8 @@ class Trader:
             trader_data.update_values("conversions", conversions)
         else:
             trader_data.add_object_encoding("conversions", conversions)
-
+        trader_data.update_values("prev_sunlight", observations.sunlight)
+        trader_data.update_values("prev_humidity", observations.humidity)
         # print(conversions)
 
         return orders
@@ -397,7 +411,7 @@ class Trader:
         orders = []
         window_size = 1000
         basket_pos = positions['GIFT_BASKET'] if "GIFT_BASKET" in positions else 0
-
+        print("Basket positions: " + str(basket_pos))
         timestamp = round(trader_data.decode_json("timestamp") / 100)
 
         osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
@@ -433,15 +447,21 @@ class Trader:
             basket_std = np.sqrt(
                 (basket_sq_sum - 2 * basket_sum * basket_mean + timestamp_window * basket_mean ** 2) / timestamp_window)
 
+            if timestamp < 500:
+                basket_std = max(15, basket_std)
+            print("Basket std: " +str(basket_std))
             if curr_spread > basket_mean + 1.5 * basket_std:
                 vol = basket_pos + pos_limits['GIFT_BASKET']
                 if vol > 0:
-                    orders.append(Order('GIFT_BASKET', worst_buy['GIFT_BASKET'], -vol))
-
+                    v1 = round(-vol/3)
+                    orders.append(Order('GIFT_BASKET', min(best_buy['GIFT_BASKET'],worst_buy['GIFT_BASKET']), -vol - v1))
+                    orders.append(Order('GIFT_BASKET', min(best_buy['GIFT_BASKET'],worst_buy['GIFT_BASKET'] + 1), v1))
             elif curr_spread < basket_mean - 1.5 * basket_std:
                 vol = pos_limits['GIFT_BASKET'] - basket_pos
                 if vol > 0:
-                    orders.append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], vol))
+                    v1 = round(vol/3)
+                    orders.append(Order('GIFT_BASKET', max(best_buy['GIFT_BASKET'],worst_sell['GIFT_BASKET'] - 1), v1))
+                    orders.append(Order('GIFT_BASKET', max(best_buy['GIFT_BASKET'],worst_sell['GIFT_BASKET']), vol-v1))
 
             print("Pairs spread: ", curr_spread)
             print("Upper threshold: ", basket_mean + 1.5 * basket_std)
@@ -518,18 +538,29 @@ class Trader:
             choco_mean = choco_sum / timestamp_window
             choco_std = np.sqrt(
                 (choco_sq_sum - 2 * choco_sum * choco_mean + timestamp_window * choco_mean ** 2) / timestamp_window)
+            print("Basket chocho std:" + str(basket_std))
+            print("Choco_std:" + str(choco_std))
 
+            # if timestamp < 500:
+            #     basket_std = max(basket_std, 12)
+            #     choco_std = max(choco_std, 3)
             if (curr_spread > basket_mean + 1.5 * basket_std
                     and choco_price > choco_mean + 1.0 * choco_std):
                 vol = choco_pos + pos_limits['CHOCOLATE']
                 if vol > 0:
-                    orders.append(Order('CHOCOLATE', worst_buy['CHOCOLATE'], -vol))
+                    v1 = round(-vol / 3)
+                    orders.append(Order('CHOCOLATE', min(best_buy['CHOCOLATE'], worst_buy['CHOCOLATE'] + 1), v1))
+                    orders.append(Order('CHOCOLATE', min(best_buy['CHOCOLATE'], worst_buy['CHOCOLATE']), -vol - v1))
+                    #orders.append(Order('CHOCOLATE', worst_buy['CHOCOLATE'], -vol))
 
             elif (curr_spread < basket_mean - 1.5 * basket_std
                   and choco_price < choco_mean - 1.0 * choco_std):
                 vol = pos_limits['CHOCOLATE'] - choco_pos
                 if vol > 0:
-                    orders.append(Order('CHOCOLATE', worst_sell['CHOCOLATE'], vol))
+                    v1 = round(vol / 3)
+                    orders.append(Order('CHOCOLATE', max(best_buy['CHOCOLATE'], worst_sell['CHOCOLATE'] - 1), v1))
+                    orders.append(Order('CHOCOLATE', max(best_buy['CHOCOLATE'], worst_sell['CHOCOLATE']), vol - v1))
+                    #orders.append(Order('CHOCOLATE', worst_sell['CHOCOLATE'], vol))
 
         if timestamp < window_size:
             trader_data.add_object_encoding("cbs[" + str(timestamp) + "]", curr_spread)
@@ -611,18 +642,28 @@ class Trader:
             roses_mean = roses_sum / timestamp_window
             roses_std = np.sqrt(
                 (roses_sq_sum - 2 * roses_sum * roses_mean + timestamp_window * roses_mean ** 2) / timestamp_window)
+            print("Roses Basket std: " + str(basket_std))
+            print("Roses std: " + str(roses_std))
+
+            # if timestamp < 50:
+            #     basket_std = max(basket_std, 8)
+            #     roses_std = max(roses_std, 5)
 
             if (curr_spread > basket_mean + 1.5 * basket_std
                     and roses_price > roses_mean + 1.0 * roses_std):
                 vol = roses_pos + pos_limits['ROSES']
                 if vol > 0:
-                    orders.append(Order('ROSES', worst_buy['ROSES'], -vol))
+                    v1 = round(-vol / 3)
+                    orders.append(Order('ROSES', min(best_buy['ROSES'], worst_buy['ROSES'] + 1), v1))
+                    orders.append(Order('ROSES', min(best_buy['ROSES'], worst_buy['ROSES']), -vol - v1))
 
             elif (curr_spread < basket_mean - 1.5 * basket_std
                   and roses_price < roses_mean - 1.0 * roses_std):
                 vol = pos_limits['ROSES'] - roses_pos
                 if vol > 0:
-                    orders.append(Order('ROSES', worst_sell['ROSES'], vol))
+                    v1 = round(vol / 3)
+                    orders.append(Order('ROSES', max(best_buy['ROSES'], worst_sell['ROSES'] - 1), v1))
+                    orders.append(Order('ROSES', max(best_buy['ROSES'], worst_sell['ROSES']), vol - v1))
 
         if timestamp < window_size:
             trader_data.add_object_encoding("rbs[" + str(timestamp) + "]", curr_spread)
@@ -708,18 +749,26 @@ class Trader:
                 (
                             strawberries_sq_sum - 2 * strawberries_sum * strawberries_mean + timestamp_window * strawberries_mean ** 2)
                 / timestamp_window)
-
+            print("Strawberries basket std: " + str(basket_std))
+            print("Strawberries std: " + str(strawberries_std))
+            # if timestamp < 500:
+            #     basket_std = max(basket_std, 15)
+            #     strawberries_std = max(strawberries_std, 1)
             if (curr_spread > basket_mean + 1.5 * basket_std
                     and strawberries_price > strawberries_mean + 1.0 * strawberries_std):
                 vol = strawberries_pos + pos_limits['STRAWBERRIES']
                 if vol > 0:
-                    orders.append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -vol))
+                    v1 = round(-vol / 3)
+                    orders.append(Order('STRAWBERRIES', min(best_buy['STRAWBERRIES'], worst_buy['STRAWBERRIES'] + 1), v1))
+                    orders.append(Order('STRAWBERRIES', min(best_buy['STRAWBERRIES'], worst_buy['STRAWBERRIES']), -vol - v1))
 
             elif (curr_spread < basket_mean - 1.5 * basket_std
                   and strawberries_price < strawberries_mean - 1.0 * strawberries_std):
                 vol = pos_limits['STRAWBERRIES'] - strawberries_pos
                 if vol > 0:
-                    orders.append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], vol))
+                    v1 = round(vol / 3)
+                    orders.append(Order('STRAWBERRIES', max(best_buy['STRAWBERRIES'], worst_sell['STRAWBERRIES'] - 1), v1))
+                    orders.append(Order('STRAWBERRIES', max(best_buy['STRAWBERRIES'], worst_sell['STRAWBERRIES']), vol - v1))
 
         if timestamp < window_size:
             trader_data.add_object_encoding("sbs[" + str(timestamp) + "]", curr_spread)
@@ -749,6 +798,8 @@ class Trader:
 
     @staticmethod
     def init(trader_data: TraderData):
+        trader_data.add_object_encoding("prev_sunlight",0)
+        trader_data.add_object_encoding("prev_humidity", 0)
         trader_data.add_object_encoding("spreads_idx_chocolate", 0)
         trader_data.add_object_encoding("spreads_idx_strawberries", 0)
         trader_data.add_object_encoding("spreads_idx_roses", 0)
