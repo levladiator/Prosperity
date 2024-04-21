@@ -179,8 +179,7 @@ class Utils:
     def black_scholes_call(S, K, T, r, sigma):
         d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
         d2 = d1 - sigma * np.sqrt(T)
-        call_price = S * 0.5 * (1 + math.erf(d1 / np.sqrt(2))) - K * np.exp(-r * T) * 0.5 * (
-                    1 + math.erf(d2 / np.sqrt(2)))
+        call_price = S * Utils.standard_normal_cdf(d1) - K * np.exp(-r * T) * Utils.standard_normal_cdf(d2)
         return call_price
 
     @staticmethod
@@ -191,11 +190,14 @@ class Utils:
             error = price - option_price
             if abs(error) < tol:
                 return sigma
-            vega = (S * 0.5 * (1 + math.erf((np.log(S / K) + (r + 0.5 * sigma ** 2) * T)
-                                            / (sigma * np.sqrt(T)) / np.sqrt(2))) * np.sqrt(T))
+            d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+            vega = (S * Utils.standard_normal_cdf(d1) * np.sqrt(T))
             sigma -= error / vega
         return sigma
 
+    @staticmethod
+    def standard_normal_cdf(x):
+        return 0.5 * (1 + math.erf(x / np.sqrt(2)))
 
 class Trader:
 
@@ -594,9 +596,9 @@ class Trader:
     @staticmethod
     def compute_orders_coupons(order_depths, position, trader_data):
         orders = []
-
         pos_limit = 600
         coupon_pos = position
+        timestamp = round(trader_data.decode_json("timestamp") / 100)
 
         osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
         for p in ["COCONUT", "COCONUT_COUPON"]:
@@ -615,18 +617,24 @@ class Trader:
         K = 10000  # Strike price
         T = 246 / 252  # Time to expiration (in years)
         r = 0  # Risk-free interest rate
-        sigma = 0.1575 # Volatility (annualized)
 
-        call_price = Utils.black_scholes_call(S, K, T, r, sigma)
+        if timestamp > 0:
+            volatility = trader_data.decode_json("volatility")
+            sigma = volatility / timestamp
 
-        if call_price > mid_price["COCONUT_COUPON"]:
-            vol = min(20, pos_limit - coupon_pos)
-            if vol > 0:
-                orders.append(Order('COCONUT_COUPON', best_sell['COCONUT_COUPON'], vol))
-        else:
-            vol = min(20, pos_limit + coupon_pos)
-            if vol > 0:
-                orders.append(Order('COCONUT_COUPON', best_buy['COCONUT_COUPON'], -vol))
+            call_price = Utils.black_scholes_call(S, K, T, r, sigma)
+
+            if call_price > mid_price["COCONUT_COUPON"]:
+                vol = min(20, pos_limit - coupon_pos)
+                if vol > 0:
+                    orders.append(Order('COCONUT_COUPON', best_sell['COCONUT_COUPON'], vol))
+            else:
+                vol = min(20, pos_limit + coupon_pos)
+                if vol > 0:
+                    orders.append(Order('COCONUT_COUPON', best_buy['COCONUT_COUPON'], -vol))
+
+            print("Volatility: ", sigma)
+            trader_data.update_values("volatility", volatility + call_price)
 
         return orders
 
@@ -857,6 +865,7 @@ class Trader:
         trader_data.add_object_encoding("strawberries_basket_sq_sum", 0)
         trader_data.add_object_encoding("strawberries_sum", 0)
         trader_data.add_object_encoding("strawberries_sq_sum", 0)
+        trader_data.add_object_encoding("volatility", 0)
 
     def run(self, state: TradingState):
         trader_data = TraderData(state.traderData)
