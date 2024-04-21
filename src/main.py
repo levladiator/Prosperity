@@ -602,7 +602,7 @@ class Trader:
         orders = []
         pos_limit = 600
         coupon_pos = position
-        window_size = 800
+        window_size = 1000
         timestamp = round(trader_data.decode_json("timestamp") / 100)
 
         osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price = {}, {}, {}, {}, {}, {}, {}
@@ -641,16 +641,16 @@ class Trader:
                 if vol > 0:
                     orders.append(Order('COCONUT_COUPON', best_buy['COCONUT_COUPON'], -vol))
 
-        if timestamp < window_size:
-            trader_data.add_object_encoding("ccv[" + str(timestamp) + "]", implied_volatility)
-        else:
-            coco_idx = trader_data.decode_json("coco_idx")
-            ccv_string = "ccv[" + str(coco_idx) + "]"
-            to_subtract = trader_data.decode_json(ccv_string)
-            trader_data.update_values(ccv_string, implied_volatility)
-            volatility_sum -= to_subtract
-            coco_idx = Utils.get_next_index(coco_idx, window_size)
-            trader_data.update_values("coco_idx", coco_idx)
+        # if timestamp < window_size:
+        #     trader_data.add_object_encoding("ccv[" + str(timestamp) + "]", implied_volatility)
+        # else:
+        #     coco_idx = trader_data.decode_json("coco_idx")
+        #     ccv_string = "ccv[" + str(coco_idx) + "]"
+        #     to_subtract = trader_data.decode_json(ccv_string)
+        #     trader_data.update_values(ccv_string, implied_volatility)
+        #     volatility_sum -= to_subtract
+        #     coco_idx = Utils.get_next_index(coco_idx, window_size)
+        #     trader_data.update_values("coco_idx", coco_idx)
 
         trader_data.update_values("volatility", volatility_sum + implied_volatility)
 
