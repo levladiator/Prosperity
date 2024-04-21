@@ -191,13 +191,17 @@ class Utils:
             if abs(error) < tol:
                 return sigma
             d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-            vega = (S * Utils.standard_normal_cdf(d1) * np.sqrt(T))
+            vega = (S * Utils.standard_normal_pdf(d1) * np.sqrt(T))
             sigma -= error / vega
         return sigma
 
     @staticmethod
     def standard_normal_cdf(x):
         return 0.5 * (1 + math.erf(x / np.sqrt(2)))
+
+    @staticmethod
+    def standard_normal_pdf(x):
+        return np.exp(-0.5 * x ** 2) / np.sqrt(2 * np.pi)
 
 class Trader:
 
@@ -598,9 +602,10 @@ class Trader:
         orders = []
         pos_limit = 600
         coupon_pos = position
+        window_size = 500
         timestamp = round(trader_data.decode_json("timestamp") / 100)
 
-        osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, vol_buy, vol_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
+        osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price = {}, {}, {}, {}, {}, {}, {}
         for p in ["COCONUT", "COCONUT_COUPON"]:
             osell[p] = order_depths[p].sell_orders
             obuy[p] = order_depths[p].buy_orders
@@ -615,12 +620,15 @@ class Trader:
 
         S = mid_price["COCONUT"]  # Current price of the underlying asset
         K = 10000  # Strike price
-        T = 246 / 252  # Time to expiration (in years)
+        T = 250 / 252  # Time to expiration (in years)
         r = 0  # Risk-free interest rate
 
+        volatility_sum = trader_data.decode_json("volatility")
+        implied_volatility = Utils.black_scholes_implied_volatility(S, K, T, r, mid_price["COCONUT_COUPON"])
+
         if timestamp > 0:
-            volatility = trader_data.decode_json("volatility")
-            sigma = volatility / timestamp
+            timestamp_window = min(timestamp, window_size)
+            sigma = volatility_sum / timestamp_window
 
             call_price = Utils.black_scholes_call(S, K, T, r, sigma)
 
@@ -633,8 +641,18 @@ class Trader:
                 if vol > 0:
                     orders.append(Order('COCONUT_COUPON', best_buy['COCONUT_COUPON'], -vol))
 
-            print("Volatility: ", sigma)
-            trader_data.update_values("volatility", volatility + call_price)
+        trader_data.update_values("volatility", volatility_sum + implied_volatility)
+
+        if timestamp < window_size:
+            trader_data.add_object_encoding("ccv[" + str(timestamp) + "]", implied_volatility)
+        else:
+            coco_idx = trader_data.decode_json("coco_idx")
+            ccv_string = "ccv[" + str(coco_idx) + "]"
+            to_subtract = trader_data.decode_json(ccv_string)
+            trader_data.update_values(ccv_string, implied_volatility)
+            volatility_sum -= to_subtract
+            coco_idx = Utils.get_next_index(coco_idx, window_size)
+            trader_data.update_values("coco_idx", coco_idx)
 
         return orders
 
@@ -866,6 +884,7 @@ class Trader:
         trader_data.add_object_encoding("strawberries_sum", 0)
         trader_data.add_object_encoding("strawberries_sq_sum", 0)
         trader_data.add_object_encoding("volatility", 0)
+        trader_data.add_object_encoding("coco_idx", 0)
 
     def run(self, state: TradingState):
         trader_data = TraderData(state.traderData)
@@ -927,6 +946,7 @@ class Trader:
         #                                      state.position,
         #                                      trader_data)
         # )
+
         final_orders["COCONUT_COUPON"] += (
             Trader.compute_orders_coupons(state.order_depths,
                                           state.position["COCONUT_COUPON"] if "COCONUT_COUPON" in state.position else 0,
