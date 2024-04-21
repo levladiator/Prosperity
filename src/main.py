@@ -175,6 +175,27 @@ class Utils:
         else:
             return curr_index + 1
 
+    @staticmethod
+    def black_scholes_call(S, K, T, r, sigma):
+        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        call_price = S * 0.5 * (1 + math.erf(d1 / np.sqrt(2))) - K * np.exp(-r * T) * 0.5 * (
+                    1 + math.erf(d2 / np.sqrt(2)))
+        return call_price
+
+    @staticmethod
+    def black_scholes_implied_volatility(S, K, T, r, option_price, initial_guess=0.2, tol=1e-3, max_iter=10):
+        sigma = initial_guess
+        for i in range(max_iter):
+            price = Utils.black_scholes_call(S, K, T, r, sigma)
+            error = price - option_price
+            if abs(error) < tol:
+                return sigma
+            vega = (S * 0.5 * (1 + math.erf((np.log(S / K) + (r + 0.5 * sigma ** 2) * T)
+                                            / (sigma * np.sqrt(T)) / np.sqrt(2))) * np.sqrt(T))
+            sigma -= error / vega
+        return sigma
+
 
 class Trader:
 
@@ -593,13 +614,10 @@ class Trader:
         S = mid_price["COCONUT"]  # Current price of the underlying asset
         K = 10000  # Strike price
         T = 246 / 252  # Time to expiration (in years)
-        r = -0.03  # Risk-free interest rate
-        sigma = 0.161 # Volatility (annualized)
+        r = 0  # Risk-free interest rate
+        sigma = 0.1575 # Volatility (annualized)
 
-        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-        call_price = (S * 0.5 * (1 + math.erf(d1 / np.sqrt(2))) -
-                      K * np.exp(-r * T) * 0.5 * (1 + math.erf(d2 / np.sqrt(2))))
+        call_price = Utils.black_scholes_call(S, K, T, r, sigma)
 
         if call_price > mid_price["COCONUT_COUPON"]:
             vol = min(20, pos_limit - coupon_pos)
