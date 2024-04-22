@@ -602,7 +602,6 @@ class Trader:
         orders = []
         pos_limit = 600
         coupon_pos = position
-        window_size = 1000
         timestamp = round(trader_data.decode_json("timestamp") / 100)
 
         osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price = {}, {}, {}, {}, {}, {}, {}
@@ -623,12 +622,11 @@ class Trader:
         T = 250 / 252  # Time to expiration (in years)
         r = 0  # Risk-free interest rate
 
-        volatility_sum = trader_data.decode_json("volatility")
-        implied_volatility = Utils.black_scholes_implied_volatility(S, K, T, r, mid_price["COCONUT_COUPON"])
-
         if timestamp > 0:
-            timestamp_window = min(timestamp, window_size)
-            sigma = volatility_sum / timestamp_window
+            volatility = trader_data.decode_json("volatility")
+            implied_volatility = Utils.black_scholes_implied_volatility(S, K, T, r, mid_price["COCONUT_COUPON"])
+
+            sigma = volatility / timestamp
 
             call_price = Utils.black_scholes_call(S, K, T, r, sigma)
 
@@ -641,18 +639,7 @@ class Trader:
                 if vol > 0:
                     orders.append(Order('COCONUT_COUPON', best_buy['COCONUT_COUPON'], -vol))
 
-        # if timestamp < window_size:
-        #     trader_data.add_object_encoding("ccv[" + str(timestamp) + "]", implied_volatility)
-        # else:
-        #     coco_idx = trader_data.decode_json("coco_idx")
-        #     ccv_string = "ccv[" + str(coco_idx) + "]"
-        #     to_subtract = trader_data.decode_json(ccv_string)
-        #     trader_data.update_values(ccv_string, implied_volatility)
-        #     volatility_sum -= to_subtract
-        #     coco_idx = Utils.get_next_index(coco_idx, window_size)
-        #     trader_data.update_values("coco_idx", coco_idx)
-
-        trader_data.update_values("volatility", volatility_sum + implied_volatility)
+            trader_data.update_values("volatility", volatility + implied_volatility)
 
         return orders
 
@@ -884,7 +871,6 @@ class Trader:
         trader_data.add_object_encoding("strawberries_sum", 0)
         trader_data.add_object_encoding("strawberries_sq_sum", 0)
         trader_data.add_object_encoding("volatility", 0)
-        trader_data.add_object_encoding("coco_idx", 0)
 
     def run(self, state: TradingState):
         trader_data = TraderData(state.traderData)
@@ -946,7 +932,6 @@ class Trader:
         #                                      state.position,
         #                                      trader_data)
         # )
-
         final_orders["COCONUT_COUPON"] += (
             Trader.compute_orders_coupons(state.order_depths,
                                           state.position["COCONUT_COUPON"] if "COCONUT_COUPON" in state.position else 0,
