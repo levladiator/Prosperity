@@ -852,6 +852,30 @@ class Trader:
         return orders
 
     @staticmethod
+    def update_bots_position(state: TradingState, trader_data: TraderData):
+        positions = trader_data.decode_json("bot_positions")
+
+        # Combine the own trades and market trades
+        all_trades = state.own_trades
+        all_trades.update(state.market_trades)
+
+        for product, trades in all_trades.items():
+            if product not in positions:    # Initalize the product dict
+                positions[product] = {}
+
+            for trade in trades:
+                # Initialise product position for the bots
+                if trade.buyer not in positions[product]:
+                    positions[product][trade.buyer] = 0
+                if trade.seller not in positions[product]:
+                    positions[product][trade.seller] = 0
+
+                positions[product][trade.buyer] += trade.quantity
+                positions[product][trade.seller] -= trade.quantity
+
+        trader_data.update_values("bot_positions", positions)
+
+    @staticmethod
     def init(trader_data: TraderData):
         trader_data.add_object_encoding("prev_sunlight",0)
         trader_data.add_object_encoding("prev_humidity", 0)
@@ -874,6 +898,7 @@ class Trader:
         trader_data.add_object_encoding("strawberries_sum", 0)
         trader_data.add_object_encoding("strawberries_sq_sum", 0)
         trader_data.add_object_encoding("volatility", 0)
+        trader_data.add_object_encoding("bot_positions", {})    # Dict: product -> {bot_id -> position}
 
     def run(self, state: TradingState):
         trader_data = TraderData(state.traderData)
@@ -881,6 +906,8 @@ class Trader:
 
         if state.timestamp == 0:
             Trader.init(trader_data)  # Add the object encoding to the trader data
+
+        Trader.update_bots_position(state, trader_data)
 
         forecast_starfruit = Forecast(
             ar_coeffs=[-0.20290068103061853],
