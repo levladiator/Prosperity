@@ -609,6 +609,9 @@ class Trader:
             osell[p] = order_depths[p].sell_orders
             obuy[p] = order_depths[p].buy_orders
 
+            if len(osell[p]) == 0 or len(obuy[p]) == 0:
+                return []
+
             best_sell[p] = next(iter(osell[p]))
             best_buy[p] = next(iter(obuy[p]))
 
